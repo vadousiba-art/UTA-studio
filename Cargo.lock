@@ -4222,6 +4222,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "uta-coach"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uta-analysis",
+ "uta-dsp",
+]
+
+[[package]]
 name = "uta-dsp"
 version = "0.1.0"
 dependencies = [

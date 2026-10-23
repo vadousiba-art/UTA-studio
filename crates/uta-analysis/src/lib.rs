@@ -15,6 +15,7 @@ pub mod compare;
 pub mod dynamics;
 pub mod live;
 pub mod notes;
+pub mod onsets;
 pub mod phrase;
 pub mod pitch;
 pub mod quality;

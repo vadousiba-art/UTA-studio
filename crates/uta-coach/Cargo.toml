@@ -1,0 +1,14 @@
+[package]
+name = "uta-coach"
+description = "Deterministic, offline vocal coach: curriculum, exercise generation, evaluation, adaptive progression and spaced review"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uta-analysis = { workspace = true }
+uta-dsp = { workspace = true }
