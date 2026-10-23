@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/uta-dsp",
+    "crates/uta-analysis",
+    "src-tauri",
+]
+# The VST3 test fixture plugin is built separately (see scripts/build-test-plugin.sh)
+exclude = ["fixtures/test-plugins/uta-test-gain"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "MIT"
+authors = ["UTA Vocal Lab contributors"]
+repository = "https://github.com/vadousiba-art/UTA-studio"
+
+[workspace.dependencies]
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+hound = "3.5"
+rtrb = "0.3"
+cpal = "0.18"
+realfft = "3.5"
+rusqlite = { version = "0.40", features = ["bundled"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+crossbeam-channel = "0.5"
+tempfile = "3"
+base64 = "0.23"
+vst3 = "0.3"
+libloading = "0.9"
+dirs = "7"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+
+uta-dsp = { path = "crates/uta-dsp" }
+uta-analysis = { path = "crates/uta-analysis" }
+uta-audio = { path = "crates/uta-audio" }
+uta-project = { path = "crates/uta-project" }
+uta-coach = { path = "crates/uta-coach" }
+uta-plugin-protocol = { path = "crates/uta-plugin-protocol" }
+uta-core = { path = "crates/uta-core" }
+
+[profile.dev]
+# Audio DSP in debug builds is far too slow to be useful in tests; optimise deps.
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+panic = "unwind"

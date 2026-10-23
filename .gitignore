@@ -1,0 +1,10 @@
+/target
+/node_modules
+/dist
+/src-tauri/target
+/src-tauri/gen/schemas
+*.log
+.DS_Store
+/fixtures/test-plugins/*/target
+/fixtures/test-plugins/build
+/scratch

@@ -1,0 +1,12 @@
+[package]
+name = "uta-dsp"
+description = "Real-time-safe DSP building blocks and built-in effects for UTA Vocal Lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
