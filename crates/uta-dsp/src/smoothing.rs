@@ -41,7 +41,9 @@ impl Smoother {
         (self.current - self.target).abs() < 1e-5
     }
 
+    /// Advance one sample and return the smoothed value.
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> f32 {
         if self.current != self.target {
             let next = self.target + (self.current - self.target) * self.coeff;

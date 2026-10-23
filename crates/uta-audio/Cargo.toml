@@ -1,0 +1,26 @@
+[package]
+name = "uta-audio"
+description = "Real-time audio engine, device I/O, recording, streaming playback and offline rendering for UTA Vocal Lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cpal = { workspace = true }
+rtrb = { workspace = true }
+hound = { workspace = true }
+crossbeam-channel = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+rubato = "5.0"
+uuid = { workspace = true }
+uta-dsp = { workspace = true }
+uta-analysis = { workspace = true }
+uta-project = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tempfile = { workspace = true }

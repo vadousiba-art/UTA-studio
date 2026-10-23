@@ -117,8 +117,8 @@ impl Effect for Compressor {
             }
             max_gr = max_gr.max(self.gr_db);
             let g = db_to_gain(-self.gr_db) * makeup;
-            *l = *l * (dry + wet * g);
-            *r = *r * (dry + wet * g);
+            *l *= dry + wet * g;
+            *r *= dry + wet * g;
         }
         self.last_gr = max_gr;
     }

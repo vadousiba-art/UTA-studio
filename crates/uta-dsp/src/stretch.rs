@@ -103,7 +103,7 @@ pub fn time_stretch(
         prev_src = src;
         out_pos += hop_out;
         frame_idx += 1;
-        if frame_idx % 64 == 0 && !progress(frame_idx as f32 / total_frames as f32) {
+        if frame_idx.is_multiple_of(64) && !progress(frame_idx as f32 / total_frames as f32) {
             return None;
         }
     }

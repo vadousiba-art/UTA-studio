@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/uta-dsp",
     "crates/uta-analysis",
+    "crates/uta-project",
+    "crates/uta-audio",
     "src-tauri",
 ]
 # The VST3 test fixture plugin is built separately (see scripts/build-test-plugin.sh)

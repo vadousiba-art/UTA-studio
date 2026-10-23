@@ -1,0 +1,21 @@
+[package]
+name = "uta-project"
+description = "Project model, editing, undo/redo, persistence and the training library for UTA Vocal Lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+hound = { workspace = true }
+tracing = { workspace = true }
+uta-dsp = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

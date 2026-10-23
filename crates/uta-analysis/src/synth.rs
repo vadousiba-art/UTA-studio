@@ -107,7 +107,7 @@ pub fn note_sequence(notes: &[(f32, f32)], gap: f32, lead_in: f32, sr: u32) -> V
             tone[len - 1 - i] *= g;
         }
         out.extend(tone.iter().map(|s| s * 0.6));
-        out.extend(std::iter::repeat(0.0).take((gap * sr as f32) as usize));
+        out.extend(std::iter::repeat_n(0.0, (gap * sr as f32) as usize));
     }
     out
 }
