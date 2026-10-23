@@ -6,6 +6,7 @@ members = [
     "crates/uta-project",
     "crates/uta-audio",
     "crates/uta-coach",
+    "crates/uta-core",
     "src-tauri",
 ]
 # The VST3 test fixture plugin is built separately (see scripts/build-test-plugin.sh)

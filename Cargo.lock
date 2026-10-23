@@ -4233,6 +4233,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "uta-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "parking_lot",
+ "rtrb",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "uta-analysis",
+ "uta-audio",
+ "uta-coach",
+ "uta-dsp",
+ "uta-project",
+ "uuid",
+]
+
+[[package]]
 name = "uta-dsp"
 version = "0.1.0"
 dependencies = [
