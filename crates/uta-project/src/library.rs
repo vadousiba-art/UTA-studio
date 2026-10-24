@@ -440,6 +440,14 @@ impl Library {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
+    pub fn set_attempt_difficulty(&self, id: &str, difficulty: Option<u8>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE attempts SET user_difficulty = ?2 WHERE id = ?1",
+            params![id, difficulty.map(|d| d.clamp(1, 5))],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_attempt(&self, id: &str) -> Result<()> {
         self.conn.execute("DELETE FROM attempts WHERE id = ?1", params![id])?;
         Ok(())

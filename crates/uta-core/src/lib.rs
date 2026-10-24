@@ -13,6 +13,7 @@ pub mod coach;
 pub mod error;
 pub mod jobs;
 pub mod live;
+pub mod presets;
 pub mod settings;
 pub mod studio;
 
@@ -261,6 +262,11 @@ impl AppCore {
 
     /// Play a WAV file from the library/project through the engine.
     pub fn preview_file(&self, path: PathBuf, start_seconds: f32) -> Result<u64> {
+        let managed = path.starts_with(&self.paths.data_dir)
+            || self.studio.lock().as_ref().map(|s| path.starts_with(s.store.dir())).unwrap_or(false);
+        if !managed {
+            return Err(CoreError::Invalid("only recordings managed by the app can be previewed".into()));
+        }
         if !path.is_file() {
             return Err(CoreError::NotFound(path.display().to_string()));
         }

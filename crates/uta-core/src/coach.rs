@@ -463,6 +463,11 @@ impl AppCore {
         })
     }
 
+    /// Self-reported difficulty (1 easy – 5 very hard) for a saved attempt.
+    pub fn rate_attempt(&self, id: &str, difficulty: u8) -> Result<()> {
+        Ok(self.library.lock().set_attempt_difficulty(id, Some(difficulty))?)
+    }
+
     pub fn skill_history(&self, skill: &str) -> Result<Vec<SkillHistoryPoint>> {
         let mut v: Vec<SkillHistoryPoint> = self
             .library
