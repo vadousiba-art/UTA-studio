@@ -9,6 +9,7 @@ members = [
     "crates/uta-core",
     "crates/uta-plugin-protocol",
     "crates/uta-plugin-host",
+    "crates/uta-plugins",
     "src-tauri",
 ]
 # The VST3 test fixture plugin is built separately (see scripts/build-test-plugin.sh)
@@ -48,6 +49,7 @@ uta-audio = { path = "crates/uta-audio" }
 uta-project = { path = "crates/uta-project" }
 uta-coach = { path = "crates/uta-coach" }
 uta-plugin-protocol = { path = "crates/uta-plugin-protocol" }
+uta-plugins = { path = "crates/uta-plugins" }
 uta-core = { path = "crates/uta-core" }
 
 [profile.dev]

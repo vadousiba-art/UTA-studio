@@ -4629,6 +4629,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "uta-plugins"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "parking_lot",
+ "rtrb",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "uta-audio",
+ "uta-plugin-protocol",
+ "uta-project",
+ "uuid",
+]
+
+[[package]]
 name = "uta-project"
 version = "0.1.0"
 dependencies = [

@@ -140,8 +140,8 @@ fn handle(req: Request, module: &mut Option<Arc<Module>>, instance: &mut Option<
             }
             None => Response::Error { message: "no plugin loaded".into() },
         },
-        Request::GetState => match instance.as_ref() {
-            Some(i) => match i.component_state() {
+        Request::GetState => match instance.as_mut() {
+            Some(i) => match i.flush_params().and_then(|_| i.component_state()) {
                 Ok(c) => Response::State { component_state: to_hex(&c), controller_state: i.controller_state().map(|s| to_hex(&s)) },
                 Err(e) => Response::Error { message: e },
             },

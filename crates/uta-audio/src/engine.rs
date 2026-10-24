@@ -120,6 +120,8 @@ pub struct AudioEngine {
     capture_only: bool,
     /// Extra latency compensation from the user's calibration (frames).
     pub manual_latency_frames: i64,
+    /// Processing latency of the current graph (plugin bridge, PDC).
+    graph_latency: u64,
     preview_generation: u64,
     track_count: usize,
 }
@@ -208,6 +210,7 @@ impl AudioEngine {
             recording: false,
             capture_only: false,
             manual_latency_frames: 0,
+            graph_latency: 0,
             preview_generation: 0,
             track_count: 0,
         }
@@ -254,6 +257,7 @@ impl AudioEngine {
 
     pub fn set_graph(&mut self, graph: Graph) -> Result<()> {
         self.track_count = graph.tracks.len();
+        self.graph_latency = graph.latency() as u64;
         self.send(Command::SetGraph(Box::new(graph)))
     }
 
@@ -345,7 +349,8 @@ impl AudioEngine {
         let sr = self.info.sample_rate as f64;
         let measured_us = self.shared.input_latency_us.load(Ordering::Relaxed) + self.shared.output_latency_us.load(Ordering::Relaxed);
         let buffer = self.info.buffer_frames.unwrap_or(0) as i64;
-        let base = (measured_us as f64 * 1e-6 * sr) as i64 + buffer;
+        // the performer hears playback delayed by plugin latency as well
+        let base = (measured_us as f64 * 1e-6 * sr) as i64 + buffer + self.graph_latency as i64;
         (base + self.manual_latency_frames).max(0) as u64
     }
 

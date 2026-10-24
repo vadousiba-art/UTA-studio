@@ -29,6 +29,51 @@ pub trait ChainProcessor: Send {
     fn gain_reduction_db(&self) -> f32 {
         0.0
     }
+    /// Called instead of `process` while the slot is bypassed. Processors
+    /// with latency must still delay the signal by `latency_samples` so the
+    /// track stays aligned; the default (zero latency) leaves it untouched.
+    fn process_bypassed(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
+}
+
+/// A fixed stereo delay used for plugin delay compensation. The buffer is
+/// allocated up front; `process` never allocates.
+pub struct FixedDelay {
+    l: Vec<f32>,
+    r: Vec<f32>,
+    pos: usize,
+    delay: usize,
+}
+
+impl FixedDelay {
+    pub fn new(delay: usize) -> Self {
+        let len = if delay == 0 { 0 } else { delay + 1 };
+        Self { l: vec![0.0; len], r: vec![0.0; len], pos: 0, delay }
+    }
+
+    pub fn delay(&self) -> usize {
+        self.delay
+    }
+
+    #[inline]
+    pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if self.delay == 0 {
+            return;
+        }
+        let n = self.l.len();
+        for (a, b) in left.iter_mut().zip(right.iter_mut()) {
+            self.l[self.pos] = *a;
+            self.r[self.pos] = *b;
+            let read = (self.pos + n - self.delay) % n;
+            *a = self.l[read];
+            *b = self.r[read];
+            self.pos = (self.pos + 1) % n;
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.l.fill(0.0);
+        self.r.fill(0.0);
+    }
 }
 
 /// Adapter for built-in effects.
@@ -77,7 +122,9 @@ impl Chain {
     #[inline]
     pub fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
         for s in &mut self.slots {
-            if !s.bypass {
+            if s.bypass {
+                s.processor.process_bypassed(l, r);
+            } else {
                 s.processor.process(l, r);
             }
         }
@@ -93,12 +140,10 @@ impl Chain {
         }
     }
 
+    /// Total latency of the chain. Bypassed slots count too: they keep
+    /// delaying the signal so toggling bypass never shifts the track.
     pub fn latency(&self) -> usize {
-        self.slots
-            .iter()
-            .filter(|s| !s.bypass)
-            .map(|s| s.processor.latency_samples())
-            .sum()
+        self.slots.iter().map(|s| s.processor.latency_samples()).sum()
     }
 }
 
@@ -128,6 +173,8 @@ pub struct GraphTrack {
     pub monitor: bool,
     pub input: InputRoute,
     pub chain: Chain,
+    /// Delay compensation so every track lines up with the slowest chain.
+    pub compensation: FixedDelay,
     l: Vec<f32>,
     r: Vec<f32>,
 }
@@ -145,6 +192,7 @@ impl GraphTrack {
             monitor: false,
             input: InputRoute { channel: 0, stereo: false },
             chain: Chain::default(),
+            compensation: FixedDelay::new(0),
             l: vec![0.0; MAX_BLOCK],
             r: vec![0.0; MAX_BLOCK],
         }
@@ -201,8 +249,23 @@ impl Graph {
     pub fn reset(&mut self) {
         for t in &mut self.tracks {
             t.chain.reset();
+            t.compensation.reset();
         }
         self.master.reset();
+    }
+
+    /// Give every track a compensation delay so all tracks arrive at the
+    /// master bus together (call after the chains are built).
+    pub fn compensate_latency(&mut self) {
+        let max = self.tracks.iter().map(|t| t.chain.latency()).max().unwrap_or(0);
+        for t in &mut self.tracks {
+            t.compensation = FixedDelay::new(max - t.chain.latency());
+        }
+    }
+
+    /// Delay from the track feeds to the graph output, in frames.
+    pub fn latency(&self) -> usize {
+        self.tracks.iter().map(|t| t.chain.latency() + t.compensation.delay()).max().unwrap_or(0) + self.master.latency()
     }
 
     /// Mix one block. `inputs` holds de-interleaved live input channels for
@@ -243,6 +306,7 @@ impl Graph {
                 }
             }
             t.chain.process(l, r);
+            t.compensation.process(l, r);
             let (pl, pr) = t.pan;
             for k in 0..frames {
                 let g = t.gain.next();
@@ -335,6 +399,51 @@ mod tests {
         let m = shared.track_meters[0].take();
         assert!((m[0].peak - 0.5).abs() < 1e-6);
         assert!(shared.master_meter.take()[0].peak > 0.24);
+    }
+
+    struct Delayer(FixedDelay);
+    impl ChainProcessor for Delayer {
+        fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
+            self.0.process(l, r);
+        }
+        fn process_bypassed(&mut self, l: &mut [f32], r: &mut [f32]) {
+            self.0.process(l, r);
+        }
+        fn set_param(&mut self, _i: u32, _v: f32) {}
+        fn reset(&mut self) {
+            self.0.reset();
+        }
+        fn latency_samples(&self) -> usize {
+            self.0.delay()
+        }
+    }
+
+    struct Impulse;
+    impl TrackFeed for Impulse {
+        fn fill(&mut self, _i: usize, _id: u128, l: &mut [f32], r: &mut [f32]) {
+            l.fill(0.0);
+            r.fill(0.0);
+            l[0] = 1.0;
+            r[0] = 1.0;
+        }
+    }
+
+    #[test]
+    fn latency_is_compensated_across_tracks() {
+        let mut g = graph_with_tracks(2);
+        g.tracks[0].chain.slots.push(ChainSlot { id: 1, processor: Box::new(Delayer(FixedDelay::new(10))), bypass: false });
+        g.compensate_latency();
+        assert_eq!(g.latency(), 10);
+        let (mut l, mut r) = (vec![0.0; 64], vec![0.0; 64]);
+        g.process(64, &mut Impulse, &[], &mut l, &mut r, None);
+        // both impulses arrive together at frame 10
+        assert!((l[10] - 2.0).abs() < 1e-6, "{:?}", &l[..16]);
+        assert_eq!(l.iter().filter(|v| v.abs() > 1e-6).count(), 1);
+        // bypassing keeps the alignment
+        g.tracks[0].chain.slots[0].bypass = true;
+        g.reset();
+        g.process(64, &mut Impulse, &[], &mut l, &mut r, None);
+        assert!((l[10] - 2.0).abs() < 1e-6);
     }
 
     #[test]

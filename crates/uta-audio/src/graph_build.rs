@@ -76,6 +76,7 @@ pub fn build_graph(project: &Project, sample_rate: f32, plugins: &mut dyn Plugin
         g.tracks.push(gt);
     }
     g.master = build_chain(None, &project.master.effects, sample_rate, plugins);
+    g.compensate_latency();
     g.master_gain.snap(db_to_gain(project.master.gain_db));
     g
 }

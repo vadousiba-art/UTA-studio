@@ -1,0 +1,23 @@
+[package]
+name = "uta-plugins"
+description = "Client side of UTA Vocal Lab's isolated VST3 hosting: helper processes, scanning and the real-time bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rtrb = { workspace = true }
+crossbeam-channel = { workspace = true }
+uuid = { workspace = true }
+parking_lot = "0.12"
+uta-audio = { workspace = true }
+uta-project = { workspace = true }
+uta-plugin-protocol = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

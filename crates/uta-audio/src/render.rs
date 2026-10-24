@@ -174,12 +174,18 @@ pub fn render_to_wav(
         let _ = std::fs::remove_file(&tmp_path);
     };
 
+    // plugin latency delays the output: render that much extra and drop it
+    // from the start so the file lines up with the timeline
+    let skip = graph.latency() as u64;
+    let mut processed = 0u64;
     while done < total {
-        let n = (total - done).min(MAX_BLOCK as u64) as usize;
-        let mut feed = FileFeed { reader: &mut reader, position: opts.start + done };
+        let n = (total + skip - processed).min(MAX_BLOCK as u64) as usize;
+        let mut feed = FileFeed { reader: &mut reader, position: opts.start + processed };
         graph.process(n, &mut feed, &[], &mut l, &mut r, None);
+        let from = skip.saturating_sub(processed).min(n as u64) as usize;
+        processed += n as u64;
         inter.clear();
-        for k in 0..n {
+        for k in from..n {
             let (a, b) = (l[k], r[k]);
             for v in [a, b] {
                 let m = v.abs();
@@ -203,8 +209,8 @@ pub fn render_to_wav(
             cleanup(writer);
             return Err(AudioError::write(path, e));
         }
-        done += n as u64;
-        if done % (MAX_BLOCK as u64 * 64) < MAX_BLOCK as u64 && !progress(done as f32 / total as f32) {
+        done += (n - from) as u64;
+        if processed % (MAX_BLOCK as u64 * 64) < MAX_BLOCK as u64 && !progress(done as f32 / total as f32) {
             cleanup(writer);
             return Err(AudioError::Cancelled);
         }

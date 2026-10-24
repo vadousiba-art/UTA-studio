@@ -381,6 +381,16 @@ impl Instance {
         Ok(())
     }
 
+    /// Deliver queued parameter changes to the processor without audio
+    /// (a VST3 "parameter flush": a process call with zero samples), so a
+    /// following state read reflects them.
+    pub fn flush_params(&mut self) -> Result<(), String> {
+        if self.changes.used.get() == 0 {
+            return Ok(());
+        }
+        self.process_block(&mut [], &mut [])
+    }
+
     fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<(), String> {
         let frames = left.len();
         // feed input bus 0 (stereo, or mono downmix), silence other buses
