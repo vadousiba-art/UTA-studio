@@ -58,6 +58,22 @@ export function Studio() {
     void refresh();
   }, [refresh]);
 
+  // plugins can crash at any time: refresh their status while any are loaded
+  const hasPlugins = (state?.pluginSlots.length ?? 0) > 0;
+  useEffect(() => {
+    if (!hasPlugins) return;
+    const t = window.setInterval(() => {
+      api
+        .studioState()
+        .then((st) => {
+          const cur = useApp.getState().studio;
+          if (st && cur && JSON.stringify(st.pluginSlots.map((p) => p.status)) !== JSON.stringify(cur.pluginSlots.map((p) => p.status))) setStudio(st);
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(t);
+  }, [hasPlugins, setStudio]);
+
   const imp = useJob(importJob, (j) => {
     setImportJob(null);
     if (j.state === "done") {

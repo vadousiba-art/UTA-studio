@@ -45,16 +45,12 @@ export function useStudioActions() {
   );
 
   const change = useCallback((op: EditOp, final: boolean) => (final ? void edit(op) : live(op)), [edit, live]);
+  const undo = useCallback(() => apply(api.studioUndo()), [apply]);
+  const redo = useCallback(() => apply(api.studioRedo()), [apply]);
+  const save = useCallback(() => apply(api.studioSave()), [apply]);
+  const refresh = useCallback(() => apply(api.studioState()), [apply]);
 
-  return {
-    apply,
-    edit,
-    change,
-    undo: () => apply(api.studioUndo()),
-    redo: () => apply(api.studioRedo()),
-    save: () => apply(api.studioSave()),
-    refresh: () => apply(api.studioState()),
-  };
+  return { apply, edit, change, undo, redo, save, refresh };
 }
 
 export const framesToSec = (f: number, sr: number) => f / sr;

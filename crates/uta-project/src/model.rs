@@ -329,14 +329,35 @@ pub enum EffectKind {
     #[serde(rename_all = "camelCase")]
     Plugin {
         plugin: PluginRef,
-        /// Opaque plugin state (component + controller), base64.
+        /// Opaque plugin state (component + controller) as written by the
+        /// plugin host: `vst3:<component hex>[:<controller hex>]`.
         #[serde(default)]
         state: Option<String>,
-        /// Normalised parameter values by VST3 parameter id, as a fallback
-        /// when state cannot be restored.
-        #[serde(default)]
+        /// Normalised parameter values by VST3 parameter id, applied on top
+        /// of the state (and used alone when the state cannot be restored).
+        #[serde(default, with = "u32_keys")]
         params: BTreeMap<u32, f64>,
     },
+}
+
+/// JSON object keys are strings, and integer keys cannot be read back
+/// through an internally tagged enum, so plugin parameter maps are stored
+/// with explicit string keys.
+mod u32_keys {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(m: &BTreeMap<u32, f64>, s: S) -> Result<S::Ok, S::Error> {
+        m.iter().map(|(k, v)| (k.to_string(), *v)).collect::<BTreeMap<String, f64>>().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<u32, f64>, D::Error> {
+        let raw = BTreeMap::<String, f64>::deserialize(d)?;
+        raw.into_iter()
+            .map(|(k, v)| k.parse::<u32>().map(|k| (k, v)).map_err(serde::de::Error::custom))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

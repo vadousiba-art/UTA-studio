@@ -127,11 +127,9 @@ fn fill(active: &mut Active, reader: &mut SourceReader, loop_region: Option<(u64
         reader.render(active.index, active.pos, &mut l[..n], &mut r[..n]);
         if let Ok(mut chunk) = active.producer.write_chunk_uninit(n * 2) {
             let (a, b) = chunk.as_mut_slices();
-            let mut k = 0;
-            for slot in a.iter_mut().chain(b.iter_mut()) {
+            for (k, slot) in a.iter_mut().chain(b.iter_mut()).enumerate() {
                 let frame = k / 2;
                 slot.write(if k % 2 == 0 { l[frame] } else { r[frame] });
-                k += 1;
             }
             // SAFETY: all n*2 slots were initialised above.
             unsafe { chunk.commit_all() };

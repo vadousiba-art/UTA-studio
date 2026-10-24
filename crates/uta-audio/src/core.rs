@@ -181,6 +181,9 @@ struct Preview {
 }
 
 struct Sequencer {
+    // boxed so the swap through the command ring moves one pointer and the
+    // old list is returned for deallocation off the audio thread
+    #[allow(clippy::box_collection)]
     notes: Option<Box<Vec<SeqNote>>>,
     next: usize,
     frame: u64,
@@ -587,9 +590,9 @@ impl EngineCore {
         // direct input monitoring
         if let Some((c, g)) = self.direct_monitor {
             if let Some(inp) = self.inputs.get(c) {
-                for k in 0..frames {
-                    self.out_l[k] += inp[k] * g;
-                    self.out_r[k] += inp[k] * g;
+                for (k, x) in inp[..frames].iter().enumerate() {
+                    self.out_l[k] += x * g;
+                    self.out_r[k] += x * g;
                 }
             }
         }

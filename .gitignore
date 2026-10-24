@@ -8,3 +8,4 @@
 /fixtures/test-plugins/*/target
 /fixtures/test-plugins/build
 /scratch
+/src-tauri/binaries

@@ -5,14 +5,15 @@
 //! plain method. The Tauri layer only forwards IPC calls to it, so complete
 //! workflows are tested headlessly (see `tests/`).
 //!
-//! Lock order (to avoid deadlocks): `studio` → `audio` → `capture` →
-//! `library` → `settings`.
+//! Lock order (to avoid deadlocks): `studio` → `audio` → `plugins` →
+//! `capture` → `library` → `settings`.
 
 pub mod analyzer;
 pub mod coach;
 pub mod error;
 pub mod jobs;
 pub mod live;
+pub mod plugins;
 pub mod presets;
 pub mod settings;
 pub mod studio;
@@ -66,6 +67,7 @@ pub struct AppCore {
     pub(crate) audio: Mutex<AudioState>,
     pub(crate) capture: Mutex<Option<ActiveCapture>>,
     pub(crate) studio: Mutex<Option<studio::StudioSession>>,
+    pub(crate) plugins: Mutex<uta_plugins::PluginManager>,
     pub jobs: Arc<Jobs>,
     backend: BackendFactory,
 }
@@ -113,8 +115,14 @@ impl AppCore {
             audio: Mutex::new(AudioState { engine: None, live: None, last_error: None }),
             capture: Mutex::new(None),
             studio: Mutex::new(None),
+            plugins: Mutex::new(uta_plugins::PluginManager::new(uta_plugins::locate_helper())),
             jobs: Arc::new(Jobs::new(workers)),
             backend,
+        })
+        .inspect(|core: &Self| {
+            if let Err(e) = core.refresh_plugin_catalog() {
+                tracing::warn!("plugin catalog unavailable: {e}");
+            }
         })
     }
 
@@ -206,7 +214,7 @@ impl AppCore {
         // reload the open project into the new engine
         if let Some(s) = studio.as_mut() {
             if let Some(e) = audio.engine.as_mut() {
-                s.sync_engine(e, true);
+                s.sync_engine(e, true, &mut self.plugins.lock());
             }
         }
         Ok(info)
@@ -315,6 +323,8 @@ impl AppCore {
         }
         a.live = None;
         a.engine = None;
+        drop(a);
+        self.plugins.lock().shutdown_all();
     }
 }
 

@@ -253,6 +253,11 @@ impl PluginManager {
         self.failures.remove(&slot);
     }
 
+    /// Unload every instance loaded from `path` (bundle disabled).
+    pub fn unload_path(&mut self, path: &Path) {
+        self.instances.retain(|_, i| i.path != path);
+    }
+
     /// Clear every recorded failure (after a rescan or enabling plugins).
     pub fn clear_failures(&mut self) {
         self.failures.clear();
@@ -309,7 +314,7 @@ impl PluginManager {
     fn instance(&self, slot: uuid::Uuid) -> Result<&LiveInstance, ClientError> {
         match self.instances.get(&slot) {
             Some(i) if !i.link.is_failed() => Ok(i),
-            Some(i) => Err(ClientError::Crashed(i.link.failure().map(|m| format!(": {m}")).unwrap_or_default())),
+            Some(i) => Err(ClientError::Plugin(format!("{} has stopped working; reload it to continue", i.plugin.name))),
             None => Err(ClientError::Plugin("this plugin is not loaded".into())),
         }
     }

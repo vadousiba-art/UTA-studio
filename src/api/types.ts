@@ -605,7 +605,75 @@ export interface StudioState {
   warnings: string[];
   recording: boolean;
   newerAutosave: RevisionInfo | null;
-  missingPlugins: string[];
+  /** Status of every third-party plugin slot in the project. */
+  pluginSlots: SlotStatus[];
+}
+
+// ------------------------------------------------------------- plugins
+
+export interface PluginInfo {
+  uid: string;
+  name: string;
+  vendor: string;
+  version: string;
+  category: string;
+  subCategories: string;
+  isInstrument: boolean;
+  audioInputs: number;
+  audioOutputs: number;
+}
+
+export interface PluginBundle {
+  path: string;
+  enabled: boolean;
+  error: string | null;
+  plugins: PluginInfo[];
+  scannedAt: string;
+  missing: boolean;
+}
+
+export interface PluginCatalog {
+  available: boolean;
+  helperPath: string | null;
+  defaultFolders: string[];
+  userFolders: string[];
+  bundles: PluginBundle[];
+}
+
+export type InstanceStatus = "running" | "crashed" | "missing" | "failed" | "disabled" | "unavailable";
+
+export interface SlotStatus {
+  slot: Id;
+  track: Id | null;
+  name: string;
+  vendor: string;
+  status: InstanceStatus;
+  message: string | null;
+  latencyFrames: number;
+  lateBlocks: number;
+  warnings: string[];
+}
+
+export interface ParamDesc {
+  id: number;
+  title: string;
+  units: string;
+  defaultNormalized: number;
+  stepCount: number;
+  canAutomate: boolean;
+  readOnly: boolean;
+  isBypass: boolean;
+}
+
+export interface ParamValue {
+  id: number;
+  value: number;
+  display: string;
+}
+
+export interface PluginParams {
+  params: ParamDesc[];
+  values: ParamValue[];
 }
 
 export interface RecordStopResult {
@@ -659,6 +727,7 @@ export type EditOp =
   | { op: "setEffectParams"; track: Id | null; slot: Id; params: Record<string, number> }
   | { op: "setPluginState"; track: Id | null; slot: Id; state?: string | null; params?: Record<string, number> | null }
   | { op: "relinkPlugin"; track: Id | null; slot: Id; plugin: PluginRef }
+  | { op: "setPluginParam"; track: Id | null; slot: Id; id: number; value: number }
   | { op: "setMasterGain"; gainDb: number }
   | { op: "setLoop"; start?: number | null; end?: number | null }
   | { op: "setTempo"; bpm: number }

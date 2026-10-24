@@ -7,13 +7,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use uta_audio::graph_build::{build_graph, mix_commands, structure_key, NoPlugins, PluginFactory};
+use uta_audio::graph_build::{build_graph, mix_commands, structure_key};
 use uta_audio::recorder::RecordTarget;
 use uta_audio::render::{render_to_wav, RenderOptions};
 use uta_audio::source::build_sources;
 use uta_audio::AudioEngine;
 use uta_project::edit::{self, ClipUpdate, TrackUpdate};
 use uta_project::paths::{sanitize_file_stem, PROJECT_EXT};
+use uta_plugins::{PluginManager, SlotStatus};
 use uta_project::{
     new_id, Asset, AssetCheck, AssetKind, AssetStatus, EffectKind, EffectSlot, History, Id, LoadedProject, Metronome, PluginRef,
     Project, ProjectStore, Region, RevisionInfo, RevisionKind,
@@ -41,8 +42,6 @@ pub(crate) struct StudioSession {
     pub recording: Option<StudioRecording>,
     pub warnings: Vec<String>,
     pub newer_autosave: Option<RevisionInfo>,
-    /// Plugin slots whose plugin could not be loaded on this computer.
-    pub missing_plugins: Vec<String>,
 }
 
 impl StudioSession {
@@ -52,7 +51,7 @@ impl StudioSession {
 
     /// Bring the engine in line with the document. `full` forces a graph
     /// rebuild (undo/redo, project open, engine restart).
-    pub fn sync_engine_with(&mut self, e: &mut AudioEngine, full: bool, plugins: &mut dyn PluginFactory) {
+    pub fn sync_engine(&mut self, e: &mut AudioEngine, full: bool, plugins: &mut PluginManager) {
         if e.sample_rate() != self.project.sample_rate {
             self.warnings.retain(|w| !w.starts_with("Sample rate"));
             self.warnings.push(format!(
@@ -66,10 +65,11 @@ impl StudioSession {
         }
         let key = structure_key(&self.project);
         if full || key != self.structure {
-            let g = build_graph(&self.project, e.sample_rate() as f32, plugins);
+            let g = build_graph(&self.project, e.sample_rate() as f32, &mut plugins.factory());
             if let Err(err) = e.set_graph(g) {
                 tracing::error!("could not update the audio graph: {err}");
             }
+            plugins.retain_project(&self.project);
             self.structure = key;
         } else {
             for c in mix_commands(&self.project) {
@@ -85,10 +85,6 @@ impl StudioSession {
             gain: uta_dsp::db_to_gain(self.project.metronome.volume_db),
         });
         let _ = e.refresh_playback();
-    }
-
-    pub fn sync_engine(&mut self, e: &mut AudioEngine, full: bool) {
-        self.sync_engine_with(e, full, &mut NoPlugins);
     }
 
     fn sample_rate_ok(&self, e: &AudioEngine) -> Result<()> {
@@ -149,6 +145,9 @@ pub enum EditOp {
     SetPluginState { track: Option<Id>, slot: Id, state: Option<String>, params: Option<BTreeMap<u32, f64>> },
     #[serde(rename_all = "camelCase")]
     RelinkPlugin { track: Option<Id>, slot: Id, plugin: PluginRef },
+    /// Set one parameter of a hosted plugin (normalised 0..1).
+    #[serde(rename_all = "camelCase")]
+    SetPluginParam { track: Option<Id>, slot: Id, id: u32, value: f64 },
     #[serde(rename_all = "camelCase")]
     SetMasterGain { gain_db: f32 },
     #[serde(rename_all = "camelCase")]
@@ -188,6 +187,7 @@ impl EditOp {
             EditOp::SetEffectBypass { .. } => "Bypass effect",
             EditOp::SetEffectParam { .. } | EditOp::SetEffectParams { .. } => "Effect parameter",
             EditOp::SetPluginState { .. } => "Plugin state",
+            EditOp::SetPluginParam { .. } => "Plugin parameter",
             EditOp::RelinkPlugin { .. } => "Relink plugin",
             EditOp::SetMasterGain { .. } => "Master level",
             EditOp::SetLoop { .. } => "Loop region",
@@ -215,7 +215,8 @@ pub struct StudioState {
     pub warnings: Vec<String>,
     pub recording: bool,
     pub newer_autosave: Option<RevisionInfo>,
-    pub missing_plugins: Vec<String>,
+    /// Status of every third-party plugin slot (running, crashed, missing…).
+    pub plugin_slots: Vec<SlotStatus>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -228,7 +229,8 @@ pub struct RecordStopResult {
 }
 
 impl AppCore {
-    fn state_of(s: &StudioSession) -> StudioState {
+    /// Snapshot for the UI. Locks `plugins`; callers must not hold it.
+    fn state_of(&self, s: &StudioSession) -> StudioState {
         StudioState {
             project: s.project.clone(),
             path: s.store.dir().to_string_lossy().to_string(),
@@ -241,12 +243,12 @@ impl AppCore {
             warnings: s.warnings.clone(),
             recording: s.recording.is_some(),
             newer_autosave: s.newer_autosave.clone(),
-            missing_plugins: s.missing_plugins.clone(),
+            plugin_slots: self.plugins.lock().statuses(&s.project),
         }
     }
 
     pub fn studio_state(&self) -> Result<Option<StudioState>> {
-        Ok(self.studio.lock().as_ref().map(Self::state_of))
+        Ok(self.studio.lock().as_ref().map(|s| self.state_of(s)))
     }
 
     fn open_session(&self, store: ProjectStore, loaded: LoadedProject) -> Result<StudioState> {
@@ -286,7 +288,6 @@ impl AppCore {
             recording: None,
             warnings,
             newer_autosave: loaded.newer_autosave,
-            missing_plugins: Vec::new(),
         };
         let mut studio = self.studio.lock();
         if let Some(old) = studio.as_ref() {
@@ -298,10 +299,10 @@ impl AppCore {
             let mut audio = self.audio.lock();
             if let Some(e) = audio.engine.as_mut() {
                 let _ = e.stop();
-                session.sync_engine(e, true);
+                session.sync_engine(e, true, &mut self.plugins.lock());
             }
         }
-        let state = Self::state_of(&session);
+        let state = self.state_of(&session);
         *studio = Some(session);
         Ok(state)
     }
@@ -363,6 +364,7 @@ impl AppCore {
             }
             if s.dirty {
                 let kind = if save { RevisionKind::Save } else { RevisionKind::Autosave };
+                self.plugins.lock().store_states(&mut s.project);
                 s.project.modified_at = now();
                 s.store.save(&s.project, kind)?;
             }
@@ -375,12 +377,14 @@ impl AppCore {
             e.set_sources(Default::default());
             let _ = e.set_loop(None);
         }
+        self.plugins.lock().shutdown_all();
         Ok(())
     }
 
     pub fn studio_save(&self) -> Result<StudioState> {
         let mut studio = self.studio.lock();
         let s = studio.as_mut().ok_or(CoreError::NoProject)?;
+        self.plugins.lock().store_states(&mut s.project);
         s.project.modified_at = now();
         s.store.save(&s.project, RevisionKind::Save)?;
         s.dirty = false;
@@ -389,7 +393,7 @@ impl AppCore {
         self.library
             .lock()
             .touch_project(&p.id.to_string(), &p.name, &s.store.dir().to_string_lossy(), p.created_at, p.modified_at)?;
-        Ok(Self::state_of(s))
+        Ok(self.state_of(s))
     }
 
     pub fn studio_autosave_if_dirty(&self) -> Result<bool> {
@@ -399,6 +403,7 @@ impl AppCore {
         if !s.dirty || s.recording.is_some() || s.last_autosave.elapsed().as_secs() < minutes * 60 {
             return Ok(false);
         }
+        self.plugins.lock().store_states(&mut s.project);
         s.store.save(&s.project, RevisionKind::Autosave)?;
         s.last_autosave = Instant::now();
         Ok(true)
@@ -408,6 +413,7 @@ impl AppCore {
     pub fn studio_autosave_now(&self) -> Result<()> {
         let mut studio = self.studio.lock();
         let s = studio.as_mut().ok_or(CoreError::NoProject)?;
+        self.plugins.lock().store_states(&mut s.project);
         s.store.save(&s.project, RevisionKind::Autosave)?;
         s.last_autosave = Instant::now();
         Ok(())
@@ -432,9 +438,9 @@ impl AppCore {
         s.asset_checks = s.store.validate_assets(&s.project);
         let mut audio = self.audio.lock();
         if let Some(e) = audio.engine.as_mut() {
-            s.sync_engine(e, true);
+            s.sync_engine(e, true, &mut self.plugins.lock());
         }
-        Ok(Self::state_of(s))
+        Ok(self.state_of(s))
     }
 
     pub fn studio_backup(&self) -> Result<PathBuf> {
@@ -463,11 +469,17 @@ impl AppCore {
     pub fn studio_edit(&self, op: EditOp, transient: bool) -> Result<Option<StudioState>> {
         let mut studio = self.studio.lock();
         let s = studio.as_mut().ok_or(CoreError::NoProject)?;
-        if s.recording.is_some() && !matches!(op, EditOp::UpdateTrack { .. } | EditOp::SetEffectParam { .. } | EditOp::SetMasterGain { .. } | EditOp::SetNotes { .. }) {
+        if s.recording.is_some()
+            && !matches!(op, EditOp::UpdateTrack { .. } | EditOp::SetEffectParam { .. } | EditOp::SetPluginParam { .. } | EditOp::SetMasterGain { .. } | EditOp::SetNotes { .. })
+        {
             return Err(CoreError::Busy("this edit isn't possible while recording".into()));
         }
         let label = op.label();
-        let before = s.project.clone();
+        if matches!(op, EditOp::RemoveEffect { .. } | EditOp::RemoveTrack { .. }) {
+            // keep the current plugin settings in the undo snapshot
+            self.plugins.lock().store_states(&mut s.project);
+        }
+        let mut before = s.project.clone();
         let mut p = s.project.clone();
         let mut rt: Vec<uta_audio::core::Command> = Vec::new();
         let mut sources_changed = false;
@@ -558,6 +570,27 @@ impl AppCore {
             EditOp::RelinkPlugin { track, slot, plugin } => {
                 edit::relink_plugin(&mut p, *track, *slot, plugin.clone())?;
             }
+            EditOp::SetPluginParam { track, slot, id, value } => {
+                if !value.is_finite() {
+                    return Err(CoreError::Invalid("parameter value must be finite".into()));
+                }
+                let v = value.clamp(0.0, 1.0);
+                let mut pm = self.plugins.lock();
+                // remember the previous value so undo can restore it
+                let previous = pm.param_values(*slot).ok().and_then(|vals| vals.iter().find(|x| x.id == *id).map(|x| x.value));
+                pm.set_params(*slot, &[(*id, v)]).map_err(|e| CoreError::Invalid(e.to_string()))?;
+                drop(pm);
+                let mut params = plugin_params(&p, *track, *slot)?;
+                if let (Some(prev), false) = (previous, params.contains_key(id)) {
+                    let mut old = params.clone();
+                    old.insert(*id, prev);
+                    if s.transient_base.is_none() {
+                        edit::set_plugin_state(&mut before, *track, *slot, None, Some(old))?;
+                    }
+                }
+                params.insert(*id, v);
+                edit::set_plugin_state(&mut p, *track, *slot, None, Some(params))?;
+            }
             EditOp::SetMasterGain { gain_db } => {
                 edit::set_master_gain(&mut p, *gain_db)?;
                 rt.push(uta_audio::core::Command::SetMasterGain(uta_dsp::db_to_gain(p.master.gain_db)));
@@ -603,7 +636,7 @@ impl AppCore {
         if let Some(e) = audio.engine.as_mut() {
             let key = structure_key(&s.project);
             if key != s.structure {
-                s.sync_engine(e, false);
+                s.sync_engine(e, false, &mut self.plugins.lock());
             } else {
                 for c in rt {
                     let _ = e.send(c);
@@ -620,7 +653,12 @@ impl AppCore {
                             gain: uta_dsp::db_to_gain(s.project.metronome.volume_db),
                         });
                     }
-                    EditOp::SetPluginState { .. } | EditOp::RelinkPlugin { .. } => s.sync_engine(e, true),
+                    EditOp::SetPluginState { .. } => s.sync_engine(e, true, &mut self.plugins.lock()),
+                    EditOp::RelinkPlugin { slot, .. } => {
+                        let mut pm = self.plugins.lock();
+                        pm.reset_slot(*slot);
+                        s.sync_engine(e, true, &mut pm);
+                    }
                     _ => {}
                 }
                 if sources_changed {
@@ -629,7 +667,7 @@ impl AppCore {
                 }
             }
         }
-        Ok(if transient { None } else { Some(Self::state_of(s)) })
+        Ok(if transient { None } else { Some(self.state_of(s)) })
     }
 
     pub fn studio_undo(&self) -> Result<StudioState> {
@@ -654,9 +692,9 @@ impl AppCore {
         s.dirty = true;
         let mut audio = self.audio.lock();
         if let Some(e) = audio.engine.as_mut() {
-            s.sync_engine(e, true);
+            s.sync_engine(e, true, &mut self.plugins.lock());
         }
-        Ok(Self::state_of(s))
+        Ok(self.state_of(s))
     }
 
     // ----------------------------------------------------------- transport
@@ -850,7 +888,7 @@ impl AppCore {
         s.asset_checks = s.store.validate_assets(&s.project);
         let mut audio = self.audio.lock();
         if let Some(e) = audio.engine.as_mut() {
-            s.sync_engine(e, false);
+            s.sync_engine(e, false, &mut self.plugins.lock());
         }
         Ok(ids)
     }
@@ -891,16 +929,20 @@ impl AppCore {
         if let Some(e) = audio.engine.as_mut() {
             e.set_sources(build_sources(&s.project, s.resolver()));
         }
-        Ok(Self::state_of(s))
+        Ok(self.state_of(s))
     }
 
     /// Render the mix to a WAV file (background job).
     pub fn studio_export(self: &Arc<Self>, path: PathBuf, mut opts: RenderOptions) -> Result<u64> {
-        let (project, sources, rate) = {
+        let (project, sources, rate, mut factory) = {
             let studio = self.studio.lock();
             let s = studio.as_ref().ok_or(CoreError::NoProject)?;
             let resolver = s.resolver();
-            (s.project.clone(), build_sources(&s.project, resolver), s.project.sample_rate)
+            // export with the plugins' current settings (separate helpers)
+            let mut project = s.project.clone();
+            let mut pm = self.plugins.lock();
+            pm.store_states(&mut project);
+            (project.clone(), build_sources(&project, resolver), project.sample_rate, pm.offline_factory())
         };
         if opts.end == 0 {
             opts.end = project.length_frames();
@@ -908,7 +950,7 @@ impl AppCore {
         if opts.end <= opts.start {
             return Err(CoreError::Invalid("there is nothing to export in that range".into()));
         }
-        if path.extension().map(|e| e.to_ascii_lowercase() != "wav").unwrap_or(true) {
+        if !path.extension().map(|e| e.eq_ignore_ascii_case("wav")).unwrap_or(false) {
             return Err(CoreError::Invalid("exports are WAV files (.wav)".into()));
         }
         if let Some(parent) = path.parent() {
@@ -917,8 +959,9 @@ impl AppCore {
         let missing = sources.missing_assets.len();
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         Ok(self.jobs.submit("export", format!("Exporting {name}"), move |job| {
-            let graph = build_graph(&project, rate as f32, &mut NoPlugins);
+            let graph = build_graph(&project, rate as f32, &mut factory);
             let mut report = render_to_wav(graph, Arc::new(sources), rate, &opts, &path, |p| job.report(p)).map_err(|e| e.to_string())?;
+            report.warnings.extend(factory.errors().lock().drain(..));
             if missing > 0 {
                 report.warnings.push(format!("{missing} missing audio file(s) were rendered as silence."));
             }
@@ -938,6 +981,18 @@ impl AppCore {
         }
         let peaks = uta_audio::waveform::Peaks::cached(&path, &cache)?;
         Ok(peaks.range(start, end.unwrap_or(peaks.frames), buckets))
+    }
+}
+
+fn plugin_params(p: &Project, track: Option<Id>, slot: Id) -> Result<BTreeMap<u32, f64>> {
+    let chain = match track {
+        Some(t) => &p.track(t).ok_or_else(|| CoreError::NotFound("track".into()))?.effects,
+        None => &p.master.effects,
+    };
+    match chain.iter().find(|s| s.id == slot).map(|s| &s.effect) {
+        Some(EffectKind::Plugin { params, .. }) => Ok(params.clone()),
+        Some(_) => Err(CoreError::Invalid("not a plugin".into())),
+        None => Err(CoreError::NotFound("effect slot".into())),
     }
 }
 

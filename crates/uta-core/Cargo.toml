@@ -21,6 +21,8 @@ uta-analysis = { workspace = true }
 uta-audio = { workspace = true }
 uta-project = { workspace = true }
 uta-coach = { workspace = true }
+uta-plugins = { workspace = true }
+uta-plugin-protocol = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

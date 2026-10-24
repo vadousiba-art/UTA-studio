@@ -14,6 +14,7 @@ use uta_core::analyzer::{AnalyzerResult, CaptureStatus, RecordingComparison};
 use uta_core::coach::{AttemptResult, CoachOverview, RangeResult, SkillHistoryPoint};
 use uta_core::jobs::JobInfo;
 use uta_core::live::LiveFrame;
+use uta_core::plugins::{PluginCatalog, PluginParams};
 use uta_core::studio::{EditOp, RecordStopResult, StudioState};
 use uta_core::{AppCore, AppInfo, ErrorPayload, Settings};
 use uta_project::library::{NoteEntry, PresetEntry, ProjectEntry, RecordingEntry};
@@ -369,6 +370,38 @@ async fn delete_preset(core: Core<'_>, id: String) -> R<()> {
     run(&core, move |c| c.delete_preset(&id)).await
 }
 
+// -------------------------------------------------------------- plugins
+
+#[tauri::command]
+async fn plugin_catalog(core: Core<'_>) -> R<PluginCatalog> {
+    run(&core, |c| c.plugin_catalog()).await
+}
+
+#[tauri::command]
+async fn plugin_scan(core: Core<'_>, force: bool) -> R<u64> {
+    run(&core, move |c| c.plugin_scan(force)).await
+}
+
+#[tauri::command]
+async fn plugin_set_enabled(core: Core<'_>, path: String, enabled: bool) -> R<()> {
+    run(&core, move |c| c.plugin_set_enabled(&path, enabled)).await
+}
+
+#[tauri::command]
+async fn plugin_forget(core: Core<'_>, path: String) -> R<()> {
+    run(&core, move |c| c.plugin_forget(&path)).await
+}
+
+#[tauri::command]
+async fn studio_plugin_params(core: Core<'_>, track: Option<Id>, slot: Id) -> R<PluginParams> {
+    run(&core, move |c| c.studio_plugin_params(track, slot)).await
+}
+
+#[tauri::command]
+async fn studio_reload_plugin(core: Core<'_>, track: Option<Id>, slot: Id) -> R<StudioState> {
+    run(&core, move |c| c.studio_reload_plugin(track, slot)).await
+}
+
 // ----------------------------------------------------------------- jobs
 
 #[tauri::command]
@@ -457,6 +490,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         presets,
         save_preset,
         delete_preset,
+        plugin_catalog,
+        plugin_scan,
+        plugin_set_enabled,
+        plugin_forget,
+        studio_plugin_params,
+        studio_reload_plugin,
         jobs_list,
         job_cancel,
         jobs_clear,

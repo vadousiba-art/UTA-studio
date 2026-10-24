@@ -116,6 +116,14 @@ export const api = {
     call<T.PresetEntry>("save_preset", { effectKind, name, params }),
   deletePreset: (id: string) => call<void>("delete_preset", { id }),
 
+  // plugins
+  pluginCatalog: () => call<T.PluginCatalog>("plugin_catalog"),
+  pluginScan: (force: boolean) => call<number>("plugin_scan", { force }),
+  pluginSetEnabled: (path: string, enabled: boolean) => call<void>("plugin_set_enabled", { path, enabled }),
+  pluginForget: (path: string) => call<void>("plugin_forget", { path }),
+  studioPluginParams: (track: string | null, slot: string) => call<T.PluginParams>("studio_plugin_params", { track, slot }),
+  studioReloadPlugin: (track: string | null, slot: string) => call<T.StudioState>("studio_reload_plugin", { track, slot }),
+
   // jobs
   jobs: () => call<T.JobInfo[]>("jobs_list"),
   cancelJob: (id: number) => call<boolean>("job_cancel", { id }),

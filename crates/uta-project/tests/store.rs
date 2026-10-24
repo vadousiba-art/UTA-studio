@@ -259,3 +259,36 @@ fn library_round_trips() {
     lib.delete_training_history().unwrap();
     assert!(lib.attempts(None, None, 10).unwrap().is_empty());
 }
+
+#[test]
+fn plugin_slot_with_state_and_params_round_trips() {
+    use std::collections::BTreeMap;
+    let d = tempfile::tempdir().unwrap();
+    let mut p = uta_project::Project::new("pl", 48_000);
+    let t = uta_project::edit::add_track(&mut p, None);
+    let mut params = BTreeMap::new();
+    params.insert(0u32, 0.25f64);
+    let slot = uta_project::EffectSlot {
+        id: uta_project::new_id(),
+        bypass: false,
+        effect: uta_project::EffectKind::Plugin {
+            plugin: uta_project::PluginRef {
+                format: "vst3".into(),
+                uid: "00".repeat(16),
+                name: "X".into(),
+                vendor: "V".into(),
+                version: "1".into(),
+                path: "/x.vst3".into(),
+            },
+            state: Some("vst3:000000000000d03f".into()),
+            params,
+        },
+    };
+    uta_project::edit::insert_effect(&mut p, Some(t), slot, None).unwrap();
+    let dir = d.path().join("p.utaproj");
+    let store = uta_project::ProjectStore::create(&dir, &p).unwrap();
+    drop(store);
+    let (_s, loaded) = uta_project::ProjectStore::open(&dir).unwrap();
+    assert_eq!(loaded.skipped_corrupt, 0);
+    assert_eq!(loaded.project, p);
+}

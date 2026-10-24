@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowUp, Power, Save, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowDown, ArrowUp, Power, Save, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
-import type { BuiltinKind, EffectCatalogEntry, EffectSlot, MeterValue, PresetEntry, StudioState } from "../../api/types";
+import type { BuiltinKind, EffectCatalogEntry, EffectSlot, MeterValue, PluginParams, PluginRef, PresetEntry, SlotStatus, StudioState } from "../../api/types";
+import { onPluginCatalogChanged } from "../Plugins";
 import { Fader, Knob } from "../../components/controls";
-import { Button, Modal, Notice } from "../../components/ui";
+import { Button, Modal, Notice, Spinner, Tag } from "../../components/ui";
 import { useApp } from "../../state/app";
 import { Meter } from "../../viz/Meter";
 import { useStudioActions } from "./useStudio";
@@ -26,14 +27,44 @@ export function useCatalog() {
   return cat;
 }
 
-function ChainList({ track, effects, selected, onSelect }: { track: string | null; effects: EffectSlot[]; selected: SlotRef | null; onSelect: (s: SlotRef | null) => void }) {
+/** Enabled, scanned VST3 effects that can be inserted. */
+export function useInstalledPlugins() {
+  const [list, setList] = useState<PluginRef[]>([]);
+  useEffect(() => {
+    const load = () =>
+      api
+        .pluginCatalog()
+        .then((c) =>
+          setList(
+            c.available
+              ? c.bundles
+                  .filter((b) => b.enabled && !b.error && !b.missing)
+                  .flatMap((b) =>
+                    b.plugins
+                      .filter((p) => !p.isInstrument)
+                      .map((p) => ({ format: "vst3", uid: p.uid, name: p.name, vendor: p.vendor, version: p.version, path: b.path })),
+                  )
+              : [],
+          ),
+        )
+        .catch(() => setList([]));
+    void load();
+    return onPluginCatalogChanged(load);
+  }, []);
+  return list;
+}
+
+function ChainList({ track, effects, selected, onSelect, slots }: { track: string | null; effects: EffectSlot[]; selected: SlotRef | null; onSelect: (s: SlotRef | null) => void; slots: SlotStatus[] }) {
   const { edit } = useStudioActions();
   const catalog = useCatalog();
+  const plugins = useInstalledPlugins();
   return (
     <div className="col" style={{ gap: 3, width: "100%" }}>
       {effects.map((e, i) => {
         const name = e.effect.type === "builtin" ? catalog.find((c) => c.id === (e.effect as { kind: string }).kind)?.name ?? e.effect.kind : e.effect.plugin.name;
         const sel = selected?.slot === e.id;
+        const ps = e.effect.type === "plugin" ? slots.find((x) => x.slot === e.id) : undefined;
+        const problem = ps && ps.status !== "running" ? ps : undefined;
         return (
           <div
             key={e.id}
@@ -53,7 +84,14 @@ function ChainList({ track, effects, selected, onSelect }: { track: string | nul
             >
               <Power size={11} />
             </button>
-            <span className="grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: e.bypass ? 0.5 : 1 }}>{name}</span>
+            <span className="grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: e.bypass ? 0.5 : 1 }} title={problem?.message ?? name}>
+              {name}
+            </span>
+            {problem && (
+              <span role="img" aria-label={`${name}: ${problem.status}`} title={problem.message ?? problem.status} style={{ color: problem.status === "crashed" ? "var(--danger)" : "var(--warn)", display: "flex" }}>
+                <AlertTriangle size={11} />
+              </span>
+            )}
             {i > 0 && (
               <button className="btn btn--ghost btn--sm btn--icon" style={{ width: 16, height: 16 }} aria-label="Move up" onClick={(ev) => { ev.stopPropagation(); void edit({ op: "moveEffect", track, slot: e.id, index: i - 1 }); }}>
                 <ArrowUp size={10} />
@@ -87,18 +125,32 @@ function ChainList({ track, effects, selected, onSelect }: { track: string | nul
         onChange={async (e) => {
           const v = e.target.value;
           if (!v) return;
-          const st = await edit({ op: "insertEffect", track, effect: v as BuiltinKind, index: null });
+          const plugin = v.startsWith("vst3:") ? plugins[Number(v.slice(5))] : undefined;
+          const st = plugin
+            ? await edit({ op: "insertPlugin", track, plugin, index: null })
+            : await edit({ op: "insertEffect", track, effect: v as BuiltinKind, index: null });
           const chain = track ? st?.project.tracks.find((t) => t.id === track)?.effects : st?.project.master.effects;
           const last = chain?.[chain.length - 1];
           if (last) onSelect({ track, slot: last.id });
         }}
       >
         <option value="">+ Add effect…</option>
-        {catalog.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
+        <optgroup label="Built-in">
+          {catalog.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </optgroup>
+        {plugins.length > 0 && (
+          <optgroup label="VST3 plugins">
+            {plugins.map((p, i) => (
+              <option key={`${p.uid}${p.path}`} value={`vst3:${i}`}>
+                {p.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </div>
   );
@@ -149,7 +201,7 @@ export function Mixer({ state, selected, onSelect }: { state: StudioState; selec
               onDoubleClick={() => void edit({ op: "updateTrack", track: t.id, update: { pan: 0 } })}
             />
           </div>,
-          <ChainList track={t.id} effects={t.effects} selected={selected} onSelect={onSelect} />,
+          <ChainList track={t.id} effects={t.effects} selected={selected} onSelect={onSelect} slots={state.pluginSlots} />,
         ),
       )}
       {strip(
@@ -160,7 +212,7 @@ export function Mixer({ state, selected, onSelect }: { state: StudioState; selec
         p.master.gainDb,
         (db, final) => change({ op: "setMasterGain", gainDb: db }, final),
         null,
-        <ChainList track={null} effects={p.master.effects} selected={selected} onSelect={onSelect} />,
+        <ChainList track={null} effects={p.master.effects} selected={selected} onSelect={onSelect} slots={state.pluginSlots} />,
       )}
       <div className="grow" />
     </div>
@@ -244,7 +296,7 @@ export function EffectEditor({ state, slot }: { state: StudioState; slot: SlotRe
   }, [kind, error]);
   if (!e) return <div className="muted">Select an effect in the mixer.</div>;
   if (e.effect.type === "plugin") {
-    return <Notice kind="info">Plugin “{e.effect.plugin.name}” — open the Plugins workspace to edit hosted plugin parameters.</Notice>;
+    return <PluginEditor state={state} slot={slot} effect={e} />;
   }
   const info = catalog.find((c) => c.id === kind);
   if (!info) return null;
@@ -327,6 +379,139 @@ export function EffectEditor({ state, slot }: { state: StudioState; slot: SlotRe
           <input className="input" autoFocus style={{ width: "100%" }} placeholder="e.g. Bright vocal" value={naming} onChange={(ev) => setNaming(ev.target.value)} />
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** Generic controls for a hosted VST3 plugin (plugin editor windows are not shown). */
+function PluginEditor({ state, slot, effect }: { state: StudioState; slot: SlotRef; effect: EffectSlot }) {
+  const { edit, change, apply } = useStudioActions();
+  const installed = useInstalledPlugins();
+  const [params, setParams] = useState<PluginParams | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const plugin = effect.effect.type === "plugin" ? effect.effect.plugin : null;
+  const stored = effect.effect.type === "plugin" ? effect.effect.params : {};
+  const status = state.pluginSlots.find((s) => s.slot === slot.slot);
+  const running = status?.status === "running";
+  const trackName = slot.track ? state.project.tracks.find((t) => t.id === slot.track)?.name : "Master";
+  const storedKey = JSON.stringify(stored);
+
+  const refresh = useCallback(() => {
+    if (!running) {
+      setParams(null);
+      return;
+    }
+    api
+      .studioPluginParams(slot.track, slot.slot)
+      .then((p) => {
+        setParams(p);
+        setLoadError(null);
+      })
+      .catch((e) => setLoadError(String((e as { message?: string }).message ?? e)));
+  }, [running, slot.track, slot.slot]);
+
+  // reload values when the slot, its status or its stored values change (undo/redo)
+  useEffect(() => {
+    refresh();
+  }, [refresh, storedKey]);
+
+  if (!plugin) return null;
+  const sr = state.project.sampleRate;
+  const visible = (params?.params ?? []).filter((p) => !p.isBypass && (!filter || p.title.toLowerCase().includes(filter.toLowerCase())));
+  const valueOf = (id: number) => params?.values.find((v) => v.id === id);
+  const alternatives = installed.filter((p) => p.uid === plugin.uid || p.name === plugin.name);
+
+  return (
+    <div className="stack">
+      <div className="row row--between">
+        <div className="row">
+          <strong>{plugin.name}</strong>
+          <span className="faint">
+            {plugin.vendor} · on {trackName}
+          </span>
+          <Button size="sm" aria-pressed={!effect.bypass} icon={<Power size={12} />} onClick={() => void edit({ op: "setEffectBypass", track: slot.track, slot: slot.slot, bypass: !effect.bypass })}>
+            {effect.bypass ? "Bypassed" : "Active"}
+          </Button>
+          {status && <Tag kind={running ? "ok" : status.status === "crashed" ? "danger" : "warn"}>{status.status}</Tag>}
+          {running && status && <span className="faint">adds {((status.latencyFrames / sr) * 1000).toFixed(0)} ms (compensated)</span>}
+        </div>
+        <div className="row">
+          {params && params.params.length > 12 && (
+            <input className="input" style={{ height: 26, width: 160 }} placeholder="Find parameter…" aria-label="Find parameter" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          )}
+          {(status?.status === "crashed" || status?.status === "failed") && (
+            <Button size="sm" variant="primary" onClick={() => void apply(api.studioReloadPlugin(slot.track, slot.slot))}>
+              Reload plugin
+            </Button>
+          )}
+        </div>
+      </div>
+      {status && !running && <Notice kind={status.status === "crashed" ? "danger" : "warn"}>{status.message}</Notice>}
+      {status?.status === "missing" && (
+        <div className="row" style={{ gap: 8 }}>
+          {alternatives.length > 0 ? (
+            <>
+              <span className="muted">Use the installed copy:</span>
+              {alternatives.map((a) => (
+                <Button key={a.path} size="sm" onClick={() => void edit({ op: "relinkPlugin", track: slot.track, slot: slot.slot, plugin: a })} title={a.path}>
+                  {a.name} {a.version}
+                </Button>
+              ))}
+            </>
+          ) : (
+            <span className="muted">Install the plugin on this computer and scan for it in the Plugin Manager; this slot will then load with its saved settings.</span>
+          )}
+        </div>
+      )}
+      {status?.warnings.map((w) => (
+        <Notice key={w} kind="warn">
+          {w}
+        </Notice>
+      ))}
+      {running && loadError && <Notice kind="danger">{loadError}</Notice>}
+      {running && !params && !loadError && <Spinner label="Reading parameters…" />}
+      {running && params && visible.length === 0 && <div className="muted">This plugin exposes no adjustable parameters.</div>}
+      {running && params && (
+        <div className="grid grid--3" style={{ gap: "6px 16px", maxHeight: 200, overflowY: "auto", paddingRight: 4 }}>
+          {visible.map((p) => {
+            const v = valueOf(p.id);
+            const step = p.stepCount > 0 ? 1 / p.stepCount : 0.001;
+            return (
+              <label key={p.id} className="col" style={{ gap: 2, fontSize: 12 }}>
+                <span className="row row--between">
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</span>
+                  <span className="mono faint">
+                    {v?.display ?? ""} {p.units}
+                  </span>
+                </span>
+                <input
+                  className="slider"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={step}
+                  disabled={p.readOnly}
+                  aria-label={p.title}
+                  defaultValue={v?.value ?? p.defaultNormalized}
+                  key={`${p.id}:${v?.value ?? ""}`}
+                  onInput={(e) => change({ op: "setPluginParam", track: slot.track, slot: slot.slot, id: p.id, value: Number((e.target as HTMLInputElement).value) }, false)}
+                  onPointerUp={(e) => {
+                    void edit({ op: "setPluginParam", track: slot.track, slot: slot.slot, id: p.id, value: Number((e.target as HTMLInputElement).value) }).then(() => refresh());
+                  }}
+                  onKeyUp={(e) => {
+                    void edit({ op: "setPluginParam", track: slot.track, slot: slot.slot, id: p.id, value: Number((e.target as HTMLInputElement).value) }).then(() => refresh());
+                  }}
+                  onDoubleClick={() => void edit({ op: "setPluginParam", track: slot.track, slot: slot.slot, id: p.id, value: p.defaultNormalized }).then(() => refresh())}
+                />
+              </label>
+            );
+          })}
+        </div>
+      )}
+      <div className="faint" style={{ fontSize: 11 }}>
+        Plugin windows are not available in this version; every automatable parameter is shown here. Double-click a slider to reset it.
+      </div>
     </div>
   );
 }

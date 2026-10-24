@@ -83,6 +83,7 @@ fn stream_ptr(s: &ComWrapper<MemoryStream>) -> *mut IBStream {
 }
 
 impl Instance {
+    #[allow(clippy::too_many_arguments)]
     pub fn load(
         module: Arc<Module>,
         path: &Path,
