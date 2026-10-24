@@ -1,0 +1,16 @@
+# Test fixture only: a minimal VST3 effect used by the plugin-host tests.
+# Not shipped with the app.
+[package]
+name = "uta-test-gain"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vst3 = "0.3"
+
+[workspace]

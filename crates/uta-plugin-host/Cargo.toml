@@ -1,0 +1,20 @@
+[package]
+name = "uta-plugin-host"
+description = "Isolated helper process that hosts one third-party VST3 plugin for UTA Vocal Lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "uta-plugin-host"
+path = "src/main.rs"
+
+[dependencies]
+vst3 = { workspace = true }
+libloading = { workspace = true }
+uta-plugin-protocol = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

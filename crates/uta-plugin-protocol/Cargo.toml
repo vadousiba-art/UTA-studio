@@ -1,0 +1,11 @@
+[package]
+name = "uta-plugin-protocol"
+description = "Wire protocol between UTA Vocal Lab and its isolated plugin-host helper process"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
