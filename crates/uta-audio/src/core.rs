@@ -93,9 +93,11 @@ pub enum Command {
     Preview {
         generation: u64,
         consumer: Consumer<f32>,
+        /// Frame where playback stops (or wraps when `loop_start` is set).
         frames: u64,
         start: u64,
         gain: f32,
+        loop_start: Option<u64>,
     },
     StopPreview,
     /// Route one input channel straight to the output (analyzer monitoring).
@@ -178,6 +180,7 @@ struct Preview {
     frames: u64,
     pos: u64,
     gain: f32,
+    loop_start: Option<u64>,
 }
 
 struct Sequencer {
@@ -387,11 +390,11 @@ impl EngineCore {
                     self.tone.note_off();
                 }
                 Command::Metronome(m) => self.metronome = m,
-                Command::Preview { generation: _, consumer, frames, start, gain } => {
+                Command::Preview { generation: _, consumer, frames, start, gain, loop_start } => {
                     if let Some(p) = self.preview.take() {
                         self.dispose(Garbage::Stream(p.consumer));
                     }
-                    self.preview = Some(Preview { consumer, frames, pos: start, gain });
+                    self.preview = Some(Preview { consumer, frames, pos: start, gain, loop_start });
                     self.shared.preview_playing.store(true, Ordering::Relaxed);
                 }
                 Command::StopPreview => {
@@ -599,21 +602,35 @@ impl EngineCore {
         // preview playback (interleaved stereo ring)
         let mut finished = false;
         if let Some(p) = self.preview.as_mut() {
-            let remaining = p.frames.saturating_sub(p.pos) as usize;
-            let want = frames.min(remaining);
-            let avail = (p.consumer.slots() / 2).min(want);
-            if let Ok(ch) = p.consumer.read_chunk(avail * 2) {
-                let (a, b) = ch.as_slices();
-                for k in 0..avail {
-                    let get = |j: usize| if j < a.len() { a[j] } else { b[j - a.len()] };
-                    self.out_l[k] += get(2 * k) * p.gain;
-                    self.out_r[k] += get(2 * k + 1) * p.gain;
+            // at most two segments: up to the loop end, then from the loop start
+            let mut k0 = 0;
+            for _ in 0..2 {
+                if p.pos >= p.frames {
+                    match p.loop_start {
+                        Some(s) => p.pos = s,
+                        None => break,
+                    }
                 }
-                ch.commit_all();
+                let remaining = p.frames.saturating_sub(p.pos) as usize;
+                let want = (frames - k0).min(remaining);
+                let avail = (p.consumer.slots() / 2).min(want);
+                if let Ok(ch) = p.consumer.read_chunk(avail * 2) {
+                    let (a, b) = ch.as_slices();
+                    for k in 0..avail {
+                        let get = |j: usize| if j < a.len() { a[j] } else { b[j - a.len()] };
+                        self.out_l[k0 + k] += get(2 * k) * p.gain;
+                        self.out_r[k0 + k] += get(2 * k + 1) * p.gain;
+                    }
+                    ch.commit_all();
+                }
+                p.pos += avail as u64;
+                k0 += avail;
+                if k0 >= frames || avail < want {
+                    break;
+                }
             }
-            p.pos += avail as u64;
             self.shared.preview_position.store(p.pos, Ordering::Relaxed);
-            finished = p.pos >= p.frames;
+            finished = p.loop_start.is_none() && p.pos >= p.frames;
         }
         if finished {
             if let Some(p) = self.preview.take() {

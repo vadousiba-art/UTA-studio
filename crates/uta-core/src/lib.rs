@@ -15,7 +15,9 @@ pub mod jobs;
 pub mod live;
 pub mod plugins;
 pub mod presets;
+pub mod romaji;
 pub mod settings;
+pub mod songlab;
 pub mod studio;
 
 use std::path::PathBuf;
@@ -50,6 +52,7 @@ pub(crate) enum CaptureKind {
     Coach(Box<uta_coach::exercises::ExercisePlan>),
     RangeLow,
     RangeHigh,
+    Song(Box<songlab::SongCapture>),
 }
 
 #[derive(Debug, Clone)]

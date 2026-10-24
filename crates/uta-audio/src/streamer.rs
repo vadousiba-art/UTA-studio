@@ -47,6 +47,10 @@ pub enum StreamerMsg {
         generation: u64,
         path: std::path::PathBuf,
         start: u64,
+        /// Stop (or wrap, when looping) at this frame instead of the end.
+        end: Option<u64>,
+        /// Loop back to `loop_start` when `end` is reached.
+        loop_start: Option<u64>,
         reply: Sender<Result<PreviewBundle, String>>,
     },
     StopPreview,
@@ -63,6 +67,8 @@ struct PreviewState {
     producer: Producer<f32>,
     reader: WavStreamReader,
     pos: u64,
+    end: u64,
+    loop_start: Option<u64>,
 }
 
 pub struct Streamer {
@@ -95,9 +101,16 @@ impl Streamer {
         rx.recv_timeout(Duration::from_secs(5)).ok()
     }
 
-    pub fn preview(&self, generation: u64, path: std::path::PathBuf, start: u64) -> Result<PreviewBundle, String> {
+    pub fn preview(
+        &self,
+        generation: u64,
+        path: std::path::PathBuf,
+        start: u64,
+        end: Option<u64>,
+        loop_start: Option<u64>,
+    ) -> Result<PreviewBundle, String> {
         let (reply, rx) = crossbeam_channel::bounded(1);
-        self.send(StreamerMsg::Preview { generation, path, start, reply });
+        self.send(StreamerMsg::Preview { generation, path, start, end, loop_start, reply });
         rx.recv_timeout(Duration::from_secs(5))
             .map_err(|_| "streamer did not respond".to_string())?
     }
@@ -149,7 +162,13 @@ fn fill(active: &mut Active, reader: &mut SourceReader, loop_region: Option<(u64
 fn fill_preview(p: &mut PreviewState, tmp: &mut Vec<f32>) {
     let mut remaining = p.producer.slots() / 2;
     while remaining > 0 {
-        let n = remaining.min(CHUNK);
+        if p.pos >= p.end {
+            match p.loop_start {
+                Some(s) => p.pos = s,
+                None => break, // the audio thread stops at `frames`
+            }
+        }
+        let n = remaining.min(CHUNK).min((p.end - p.pos) as usize);
         let got = p.reader.read(p.pos, n, tmp).unwrap_or_default();
         let ch = p.reader.info.channels as usize;
         let (frames, eof) = if got == 0 { (n, true) } else { (got, false) };
@@ -210,16 +229,18 @@ fn run(rx: Receiver<StreamerMsg>, sample_rate: u32) {
                 let _ = reply.send(StreamBundle { generation, position, streams });
             }
             Ok(StreamerMsg::Stop) => active.clear(),
-            Ok(StreamerMsg::Preview { generation, path, start, reply }) => {
+            Ok(StreamerMsg::Preview { generation, path, start, end, loop_start, reply }) => {
                 preview = None;
                 match WavStreamReader::open(&path) {
                     Ok(rd) => {
                         let frames = rd.info.frames;
+                        let end = end.unwrap_or(frames).min(frames);
+                        let loop_start = loop_start.filter(|s| *s < end);
                         let (producer, consumer) = RingBuffer::<f32>::new(ring_frames * 2);
-                        let mut p = PreviewState { producer, reader: rd, pos: start.min(frames) };
+                        let mut p = PreviewState { producer, reader: rd, pos: start.min(end), end, loop_start };
                         fill_preview(&mut p, &mut tmp);
                         preview = Some(p);
-                        let _ = reply.send(Ok(PreviewBundle { generation, consumer, frames }));
+                        let _ = reply.send(Ok(PreviewBundle { generation, consumer, frames: end }));
                     }
                     Err(e) => {
                         let _ = reply.send(Err(e.to_string()));

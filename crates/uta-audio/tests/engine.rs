@@ -265,6 +265,32 @@ fn preview_plays_file_to_end() {
     assert_eq!(n, 9600, "every preview frame played exactly once");
 }
 
+#[test]
+fn preview_range_loops_seamlessly() {
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("ramp.wav");
+    let ramp: Vec<f32> = (0..9600).map(|i| (i + 1) as f32 / 100_000.0).collect();
+    write_wav_f32(&path, SR, 1, &ramp).unwrap();
+    let captured = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let cap = captured.clone();
+    let mut opts = NullOptions::new(SR);
+    opts.free_run = true;
+    opts.output_sink = Some(Box::new(move |out: &[f32]| cap.lock().unwrap().extend_from_slice(out)));
+    let mut eng = AudioEngine::start(BackendChoice::Null(opts)).unwrap();
+    let end = eng.preview_range(path, 1000, Some(3000), true, 1.0).unwrap();
+    assert_eq!(end, 3000);
+    assert!(wait_until(Duration::from_secs(5), || captured.lock().unwrap().len() > 2 * 7000));
+    assert!(eng.status().preview_playing, "a looped preview keeps playing");
+    eng.stop_preview().unwrap();
+    let out = captured.lock().unwrap().clone();
+    let left: Vec<f32> = out.chunks(2).map(|c| c[0]).skip_while(|v| *v == 0.0).take(5000).collect();
+    assert_eq!(left.len(), 5000);
+    for (k, v) in left.iter().enumerate() {
+        let expected = ramp[1000 + k % 2000];
+        assert!((v - expected).abs() < 1e-7, "frame {k}: {v} vs {expected}");
+    }
+}
+
 fn render_project(p: &Project, dir: &Path, opts: &RenderOptions) -> (uta_audio::render::RenderReport, Vec<f32>) {
     let graph = build_graph(p, SR as f32, &mut NoPlugins);
     let sources = Arc::new(build_sources(p, resolver(dir.to_path_buf())));

@@ -466,10 +466,18 @@ impl AudioEngine {
 
     /// Play a WAV file outside the timeline (take replay, reference audio).
     pub fn preview(&mut self, path: PathBuf, start_frame: u64, gain: f32) -> Result<u64> {
+        self.preview_range(path, start_frame, None, false, gain)
+    }
+
+    /// Play `path` from `start_frame` to `end` (or the file end). With
+    /// `looped`, playback wraps seamlessly from `end` back to `start_frame`
+    /// until stopped. Returns the end frame.
+    pub fn preview_range(&mut self, path: PathBuf, start_frame: u64, end: Option<u64>, looped: bool, gain: f32) -> Result<u64> {
         self.preview_generation += 1;
+        let loop_start = looped.then_some(start_frame);
         let b = self
             .streamer
-            .preview(self.preview_generation, path, start_frame)
+            .preview(self.preview_generation, path, start_frame, end, loop_start)
             .map_err(AudioError::Other)?;
         let frames = b.frames;
         self.send(Command::Preview {
@@ -478,6 +486,7 @@ impl AudioEngine {
             frames: b.frames,
             start: start_frame,
             gain,
+            loop_start: loop_start.filter(|s| *s < frames),
         })?;
         Ok(frames)
     }

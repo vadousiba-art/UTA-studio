@@ -81,6 +81,18 @@ impl AppCore {
     }
 
     pub(crate) fn begin_capture(&self, kind: CaptureKind, guide: Option<(Vec<uta_audio::core::SeqNote>, Option<f32>)>) -> Result<()> {
+        self.begin_capture_with(kind, guide, None)
+    }
+
+    /// Start a capture; `after` runs on the engine right after the capture
+    /// command, under the same lock (e.g. to start backing playback).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn begin_capture_with(
+        &self,
+        kind: CaptureKind,
+        guide: Option<(Vec<uta_audio::core::SeqNote>, Option<f32>)>,
+        after: Option<Box<dyn FnOnce(&mut uta_audio::AudioEngine) -> Result<()>>>,
+    ) -> Result<()> {
         if !self.settings().microphone_enabled {
             return Err(CoreError::Invalid("Microphone access is off. Enable it in Settings to record.".into()));
         }
@@ -97,6 +109,7 @@ impl AppCore {
             CaptureKind::Analyzer => "analyzer",
             CaptureKind::Coach(_) => "coach",
             CaptureKind::RangeLow | CaptureKind::RangeHigh => "range",
+            CaptureKind::Song(_) => "song",
         };
         let path = self.new_recording_path(prefix)?;
         let channel = self.settings().input_channel;
@@ -110,6 +123,13 @@ impl AppCore {
             }
             let lat = (e.latency_compensation() as f32) / e.sample_rate() as f32;
             e.capture(path.clone(), channel, guide)?;
+            if let Some(f) = after {
+                if let Err(err) = f(e) {
+                    let _ = e.stop_recording();
+                    let _ = std::fs::remove_file(&path);
+                    return Err(err);
+                }
+            }
             if let Some(l) = a.live.as_ref() {
                 l.set_enabled(true);
             }
@@ -146,6 +166,7 @@ impl AppCore {
                     CaptureKind::Coach(p) => format!("coach:{}", p.exercise_id),
                     CaptureKind::RangeLow => "rangeLow".into(),
                     CaptureKind::RangeHigh => "rangeHigh".into(),
+                    CaptureKind::Song(s) => format!("song:{}", s.song),
                 }),
                 seconds: (now() - c.started).num_milliseconds() as f32 / 1000.0,
                 input_device: input,
@@ -164,11 +185,14 @@ impl AppCore {
             return Ok(());
         }
         let (cap, _, _) = self.end_capture()?;
+        if matches!(cap.kind, CaptureKind::Song(_)) {
+            let _ = self.stop_preview();
+        }
         let _ = std::fs::remove_file(&cap.path);
         Ok(())
     }
 
-    fn analysis_options(&self) -> AnalysisOptions {
+    pub(crate) fn analysis_options(&self) -> AnalysisOptions {
         let s = self.settings();
         AnalysisOptions {
             targets: vec![],
