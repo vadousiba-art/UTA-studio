@@ -277,7 +277,7 @@ export function Studio() {
         )}
       </div>
 
-      <div style={{ height: 300, borderTop: "1px solid var(--border)", background: "var(--panel)", display: "flex", flexDirection: "column" }}>
+      <div style={{ height: 330, borderTop: "1px solid var(--border)", background: "var(--panel)", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "0 12px" }}>
           <Tabs
             tabs={[

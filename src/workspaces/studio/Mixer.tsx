@@ -109,20 +109,20 @@ export function Mixer({ state, selected, onSelect }: { state: StudioState; selec
   const { edit, change } = useStudioActions();
   const p = state.project;
   const strip = (key: string, name: string, color: string, meters: [MeterValue, MeterValue] | undefined, gainDb: number, onGain: (db: number, final: boolean) => void, extra: React.ReactNode, chain: React.ReactNode) => (
-    <div key={key} className="col" style={{ width: 132, flex: "none", padding: 8, borderRight: "1px solid var(--border)", alignItems: "center", gap: 6 }}>
+    <div key={key} className="col" style={{ width: 132, flex: "none", padding: 8, borderRight: "1px solid var(--border)", alignItems: "center", gap: 6, minHeight: "100%" }}>
       <div style={{ width: "100%", height: 3, background: color, borderRadius: 2 }} />
       <div style={{ fontWeight: 600, fontSize: 12, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
       {chain}
       <div className="row" style={{ gap: 6, alignItems: "flex-end" }}>
-        <Fader db={gainDb} onChange={onGain} height={140} label={`${name} level`} />
-        <Meter values={meters ?? [{ peak: 0, rms: 0, clipped: false }, { peak: 0, rms: 0, clipped: false }]} length={140} thickness={5} onResetClip={() => void api.resetClips()} label={`${name} level`} />
+        <Fader db={gainDb} onChange={onGain} height={120} label={`${name} level`} />
+        <Meter values={meters ?? [{ peak: 0, rms: 0, clipped: false }, { peak: 0, rms: 0, clipped: false }]} length={120} thickness={5} onResetClip={() => void api.resetClips()} label={`${name} level`} />
       </div>
       <div className="mono" style={{ fontSize: 11 }}>{gainDb <= -95 ? "−∞" : `${gainDb > 0 ? "+" : ""}${gainDb.toFixed(1)}`} dB</div>
       {extra}
     </div>
   );
   return (
-    <div style={{ display: "flex", overflowX: "auto", height: "100%" }}>
+    <div style={{ display: "flex", alignItems: "flex-start", minHeight: "100%" }}>
       {p.tracks.map((t, i) =>
         strip(
           t.id,
