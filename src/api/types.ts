@@ -814,3 +814,96 @@ export type JobInfo = {
   label: string;
   progress: number;
 } & JobState;
+
+// ------------------------------------------------------------- song lab
+
+export type SongTrack = "backing" | "reference";
+
+export interface SongAudio {
+  file: string;
+  originalName: string;
+  sampleRate: number;
+  channels: number;
+  frames: number;
+}
+
+export interface LyricLine {
+  id: string;
+  text: string;
+  reading: string;
+  start: number | null;
+  end: number | null;
+}
+
+export interface SongPhrase {
+  id: string;
+  name: string;
+  start: number;
+  end: number;
+  lineIds: string[];
+  notes: string;
+}
+
+export interface SongData {
+  backing: SongAudio | null;
+  reference: SongAudio | null;
+  lines: LyricLine[];
+  phrases: SongPhrase[];
+  notes: string;
+  practiceSpeed: number;
+}
+
+export interface Romanized {
+  romaji: string;
+  morae: number | null;
+  hasKanji: boolean;
+}
+
+export interface SongSummary {
+  id: string;
+  title: string;
+  artist: string;
+  updatedAt: string;
+  hasBacking: boolean;
+  hasReference: boolean;
+  lines: number;
+  phrases: number;
+}
+
+export interface SongView {
+  id: string;
+  title: string;
+  artist: string;
+  createdAt: string;
+  updatedAt: string;
+  data: SongData;
+  romaji: Romanized[];
+  readySpeeds: number[];
+  deviceRate: number;
+  attempts: RecordingEntry[];
+}
+
+export interface SongUpdate {
+  title?: string;
+  artist?: string;
+  lines?: LyricLine[];
+  phrases?: SongPhrase[];
+  notes?: string;
+  practiceSpeed?: number;
+}
+
+export interface SongPlayback {
+  startFrame: number;
+  endFrame: number;
+  speed: number;
+  rate: number;
+}
+
+export interface SongAttemptResult {
+  recording: RecordingEntry;
+  analysis: PhraseAnalysis;
+  feedback: Feedback;
+  comparison: ContourComparison | null;
+  contour: PitchFrame[];
+  notes: string[];
+}

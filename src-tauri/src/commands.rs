@@ -15,6 +15,7 @@ use uta_core::coach::{AttemptResult, CoachOverview, RangeResult, SkillHistoryPoi
 use uta_core::jobs::JobInfo;
 use uta_core::live::LiveFrame;
 use uta_core::plugins::{PluginCatalog, PluginParams};
+use uta_core::songlab::{PitchFrame, SongAttemptResult, SongPlayback, SongSummary, SongTrack, SongUpdate, SongView};
 use uta_core::studio::{EditOp, RecordStopResult, StudioState};
 use uta_core::{AppCore, AppInfo, ErrorPayload, Settings};
 use uta_project::library::{NoteEntry, PresetEntry, ProjectEntry, RecordingEntry};
@@ -402,6 +403,84 @@ async fn studio_reload_plugin(core: Core<'_>, track: Option<Id>, slot: Id) -> R<
     run(&core, move |c| c.studio_reload_plugin(track, slot)).await
 }
 
+// -------------------------------------------------------------- song lab
+
+#[tauri::command]
+async fn songs(core: Core<'_>) -> R<Vec<SongSummary>> {
+    run(&core, |c| c.songs()).await
+}
+
+#[tauri::command]
+async fn song_create(core: Core<'_>, title: String, artist: String) -> R<SongView> {
+    run(&core, move |c| c.song_create(&title, &artist)).await
+}
+
+#[tauri::command]
+async fn song_get(core: Core<'_>, id: String) -> R<SongView> {
+    run(&core, move |c| c.song_get(&id)).await
+}
+
+#[tauri::command]
+async fn song_update(core: Core<'_>, id: String, update: SongUpdate) -> R<SongView> {
+    run(&core, move |c| c.song_update(&id, update)).await
+}
+
+#[tauri::command]
+async fn song_import_lyrics(core: Core<'_>, id: String, text: String) -> R<SongView> {
+    run(&core, move |c| c.song_import_lyrics(&id, &text)).await
+}
+
+#[tauri::command]
+async fn song_import_lyrics_file(core: Core<'_>, id: String, path: String) -> R<SongView> {
+    run(&core, move |c| c.song_import_lyrics_file(&id, &PathBuf::from(path))).await
+}
+
+#[tauri::command]
+async fn song_delete(core: Core<'_>, id: String) -> R<()> {
+    run(&core, move |c| c.song_delete(&id)).await
+}
+
+#[tauri::command]
+async fn song_import_audio(core: Core<'_>, id: String, track: SongTrack, path: String) -> R<u64> {
+    run(&core, move |c| c.song_import_audio(&id, track, PathBuf::from(path))).await
+}
+
+#[tauri::command]
+async fn song_remove_audio(core: Core<'_>, id: String, track: SongTrack) -> R<SongView> {
+    run(&core, move |c| c.song_remove_audio(&id, track)).await
+}
+
+#[tauri::command]
+async fn song_prepare(core: Core<'_>, id: String, speed: f32) -> R<u64> {
+    run(&core, move |c| c.song_prepare(&id, speed)).await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn song_play(core: Core<'_>, id: String, track: SongTrack, from: f64, to: Option<f64>, looped: bool, speed: f32) -> R<SongPlayback> {
+    run(&core, move |c| c.song_play(&id, track, from, to, looped, speed)).await
+}
+
+#[tauri::command]
+async fn song_stop(core: Core<'_>) -> R<()> {
+    run(&core, |c| c.song_stop()).await
+}
+
+#[tauri::command]
+async fn song_attempt_start(core: Core<'_>, id: String, phrase: String, speed: f32, with_backing: bool) -> R<SongPlayback> {
+    run(&core, move |c| c.song_attempt_start(&id, &phrase, speed, with_backing)).await
+}
+
+#[tauri::command]
+async fn song_attempt_stop(core: Core<'_>) -> R<SongAttemptResult> {
+    run(&core, |c| c.song_attempt_stop()).await
+}
+
+#[tauri::command]
+async fn song_reference_contour(core: Core<'_>, id: String, phrase: String) -> R<Vec<PitchFrame>> {
+    run(&core, move |c| c.song_reference_contour(&id, &phrase)).await
+}
+
 // ----------------------------------------------------------------- jobs
 
 #[tauri::command]
@@ -490,6 +569,21 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         presets,
         save_preset,
         delete_preset,
+        songs,
+        song_create,
+        song_get,
+        song_update,
+        song_import_lyrics,
+        song_import_lyrics_file,
+        song_delete,
+        song_import_audio,
+        song_remove_audio,
+        song_prepare,
+        song_play,
+        song_stop,
+        song_attempt_start,
+        song_attempt_stop,
+        song_reference_contour,
         plugin_catalog,
         plugin_scan,
         plugin_set_enabled,

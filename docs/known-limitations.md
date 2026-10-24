@@ -59,10 +59,20 @@ version.
 
 ## Song Lab
 
-* In progress — see STATUS.md for exactly which parts work.
 * Kanji readings are not generated automatically (no dictionary is
   bundled); romaji is generated from kana, and the user types readings for
-  kanji lines.
+  kanji lines. Particles are romanised as written (は → "ha", へ → "he").
+* WAV only, up to 10 minutes per track; slow-down renders hold the whole
+  track in memory while rendering (about 200 MB for a 4-minute stereo
+  song).
+* Attempts are aligned to the exact frame where the backing started, but
+  the device's round-trip latency is an estimate (stream timestamps or
+  buffer size, plus the manual offset in Settings); calibrate the offset if
+  timing results look consistently early or late.
+* The reference comparison is only as good as the reference: a vocal with
+  heavy reverb, doubles or harmonies gives unreliable pitch.
+* Lyrics files must be UTF-8 (Shift-JIS files need converting first).
+* Analysis of any single take covers its first 2 minutes.
 
 ## UI
 

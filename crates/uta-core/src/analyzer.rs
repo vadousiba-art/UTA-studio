@@ -11,6 +11,9 @@ use uta_project::library::RecordingEntry;
 use crate::error::{CoreError, Result};
 use crate::{now, ActiveCapture, AppCore, CaptureKind};
 
+/// Work run on the engine right after a capture starts (same lock).
+pub(crate) type EngineHook = Box<dyn FnOnce(&mut uta_audio::AudioEngine) -> Result<()>>;
+
 /// Longest analyzer/coach take (protects memory and keeps analysis fast).
 pub const MAX_CAPTURE_SECONDS: u64 = 120;
 
@@ -54,6 +57,20 @@ pub struct RecordingComparison {
     pub notes: Vec<String>,
 }
 
+/// Decode at most the first `max_seconds` of a WAV file as mono. Longer
+/// takes are kept on disk in full; only the analysis is limited.
+pub(crate) fn read_mono_prefix(path: &Path, max_seconds: u64) -> Result<Vec<f32>> {
+    let mut rd = uta_audio::wav::WavStreamReader::open(path)?;
+    let ch = rd.info.channels.max(1) as usize;
+    let frames = rd.info.frames.min(max_seconds * rd.info.sample_rate as u64) as usize;
+    let mut tmp = Vec::new();
+    rd.read(0, frames, &mut tmp).map_err(|e| CoreError::Other(format!("could not read {}: {e}", path.display())))?;
+    if rd.info.frames as usize > frames {
+        tracing::warn!("{} is longer than {max_seconds} s; only the beginning is analysed", path.display());
+    }
+    Ok(tmp.chunks(ch).map(|c| c.iter().sum::<f32>() / ch as f32).collect())
+}
+
 fn analysis_cache_path(wav: &Path) -> PathBuf {
     wav.with_extension("analysis.json")
 }
@@ -86,12 +103,11 @@ impl AppCore {
 
     /// Start a capture; `after` runs on the engine right after the capture
     /// command, under the same lock (e.g. to start backing playback).
-    #[allow(clippy::type_complexity)]
     pub(crate) fn begin_capture_with(
         &self,
         kind: CaptureKind,
         guide: Option<(Vec<uta_audio::core::SeqNote>, Option<f32>)>,
-        after: Option<Box<dyn FnOnce(&mut uta_audio::AudioEngine) -> Result<()>>>,
+        after: Option<EngineHook>,
     ) -> Result<()> {
         if !self.settings().microphone_enabled {
             return Err(CoreError::Invalid("Microphone access is off. Enable it in Settings to record.".into()));
@@ -151,8 +167,7 @@ impl AppCore {
             .files
             .first()
             .ok_or_else(|| CoreError::Other(format!("the recording could not be saved: {}", outcome.result.errors.join("; "))))?;
-        let buf = uta_audio::wav::read_wav(&file.path, Some(MAX_CAPTURE_SECONDS * outcome.sample_rate as u64 + outcome.sample_rate as u64))?;
-        Ok((cap, buf.to_mono(), outcome.sample_rate))
+        Ok((cap, read_mono_prefix(&file.path, MAX_CAPTURE_SECONDS)?, outcome.sample_rate))
     }
 
     pub fn capture_status(&self) -> CaptureStatus {
@@ -245,8 +260,8 @@ impl AppCore {
                 if !path.is_file() {
                     return Err(CoreError::NotFound(format!("audio file for {}", rec.title)));
                 }
-                let buf = uta_audio::wav::read_wav(&path, Some(MAX_CAPTURE_SECONDS * 192_000))?;
-                let a = analyze_phrase(&buf.to_mono(), buf.sample_rate, &self.analysis_options());
+                let sr = uta_audio::wav::wav_info(&path)?.sample_rate;
+                let a = analyze_phrase(&read_mono_prefix(&path, MAX_CAPTURE_SECONDS)?, sr, &self.analysis_options());
                 if let Ok(json) = serde_json::to_vec(&a) {
                     let _ = std::fs::write(&cache, json);
                 }

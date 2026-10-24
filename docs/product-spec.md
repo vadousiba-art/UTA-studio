@@ -56,10 +56,12 @@ resting); always-visible "I feel discomfort" button; exercise library.
 ### Song Lab
 For songs the user legally owns: import a backing track (and optionally a
 reference vocal), enter or import lyrics (plain text or LRC), add kana
-readings, see romaji, set line timings by tapping along, group lines into
-phrases, loop a phrase at reduced speed without changing pitch, record
-multiple attempts, compare an attempt's pitch contour with the reference,
-keep notes per song.
+readings, see romaji and mora (拍) counts, set line timings by tapping
+Space along with the song, tick lines to make phrases, loop a phrase at
+50–100 % speed without changing pitch, record attempts (backing plays from
+1.5 s before the phrase), see the attempt's pitch contour over the
+reference's with average pitch difference, timing offset and voiced
+overlap, replay earlier attempts, keep notes per phrase and per song.
 
 ### Recording Studio
 Projects with tracks (arm, monitor, input channel, mute/solo, gain, pan,

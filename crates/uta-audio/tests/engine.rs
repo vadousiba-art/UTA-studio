@@ -279,7 +279,9 @@ fn preview_range_loops_seamlessly() {
     let mut eng = AudioEngine::start(BackendChoice::Null(opts)).unwrap();
     let end = eng.preview_range(path, 1000, Some(3000), true, 1.0).unwrap();
     assert_eq!(end, 3000);
-    assert!(wait_until(Duration::from_secs(5), || captured.lock().unwrap().len() > 2 * 7000));
+    // wait for 5000 frames *after* the preview became audible
+    let audible = |out: &[f32]| out.chunks(2).map(|c| c[0]).skip_while(|v| *v == 0.0).count();
+    assert!(wait_until(Duration::from_secs(10), || audible(&captured.lock().unwrap()) >= 5000));
     assert!(eng.status().preview_playing, "a looped preview keeps playing");
     eng.stop_preview().unwrap();
     let out = captured.lock().unwrap().clone();

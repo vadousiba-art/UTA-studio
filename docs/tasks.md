@@ -50,7 +50,7 @@ Milestones were built in order M0 → M7. `[x]` = implemented and tested,
 ## M6 Coach + Song Lab
 - [x] Curriculum, exercise generation, evaluation, progression, review,
       health rules, coach UI (lessons, range check, skill map, library)
-- [ ] Song Lab: songs, backing/reference import, lyrics with kana/romaji,
+- [x] Song Lab: songs, backing/reference import, lyrics with kana/romaji,
       timing, phrase loops at reduced speed, attempts and comparison, notes
 - [ ] Visual re-verification of the Coach lesson flow in the running app
 

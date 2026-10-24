@@ -7,9 +7,11 @@ A free, local-first desktop app for learning to sing and producing vocals:
 - **Analyzer** — record a phrase and get measured feedback: pitch accuracy,
   stability, vibrato, onsets, dynamics, tone indicators, with quality checks
   that refuse to grade bad recordings.
-- **Song Lab** — practise Japanese songs you legally own: backing track,
-  lyrics with kana/romaji, phrase loops, slowed-down practice, attempts and
-  comparisons. *(in progress — see [STATUS.md](STATUS.md))*
+- **Song Lab** — practise Japanese songs you legally own: backing track and
+  optional reference vocal (WAV), lyrics (LRC or text) with kana readings,
+  romaji and mora counts, tap-along timing, phrase loops, slowed-down
+  practice without pitch change, recorded attempts compared with the
+  reference's pitch and timing, notes.
 - **Recording Studio** — real multitrack recording with takes and comping,
   clip editing, undo/redo, autosave/recovery, built-in effects (EQ,
   compressor, gate, reverb, delay, utility) with presets, WAV import and

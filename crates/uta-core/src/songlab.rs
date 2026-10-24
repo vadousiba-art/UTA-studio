@@ -16,7 +16,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use uta_analysis::compare::{compare_contours, ContourComparison};
 use uta_analysis::phrase::{analyze_phrase, PhraseAnalysis};
-use uta_analysis::pitch::PitchFrame;
+pub use uta_analysis::pitch::PitchFrame;
 use uta_coach::evaluate::{free_singing_feedback, Feedback};
 use uta_project::library::{RecordingEntry, SongEntry};
 
@@ -260,7 +260,7 @@ fn parse_stamp(tag: &str) -> Option<f64> {
     let (m, s) = tag.split_once(':')?;
     let m: u32 = m.trim().parse().ok()?;
     let s: f64 = s.trim().parse().ok()?;
-    (s.is_finite() && (0.0..60.0).contains(&s)).then(|| m as f64 * 60.0 + s)
+    (s.is_finite() && (0.0..60.0).contains(&s)).then_some(m as f64 * 60.0 + s)
 }
 
 fn validate(data: &SongData) -> Result<()> {
@@ -471,6 +471,18 @@ impl AppCore {
         self.song_update(id, SongUpdate { lines: Some(lines), ..Default::default() })
     }
 
+    /// Import lyrics from a UTF-8 `.lrc` or `.txt` file.
+    pub fn song_import_lyrics_file(&self, id: &str, path: &Path) -> Result<SongView> {
+        let meta = std::fs::metadata(path)?;
+        if meta.len() > 1_000_000 {
+            return Err(CoreError::Invalid("that lyrics file is too large".into()));
+        }
+        let bytes = std::fs::read(path)?;
+        let text = String::from_utf8(bytes)
+            .map_err(|_| CoreError::Invalid("the lyrics file is not UTF-8 text (save it as UTF-8 and try again)".into()))?;
+        self.song_import_lyrics(id, text.trim_start_matches('\u{feff}'))
+    }
+
     /// Delete a song, its files and its practice attempts.
     pub fn song_delete(&self, id: &str) -> Result<()> {
         let dir = self.song_dir(id)?;
@@ -655,11 +667,11 @@ impl AppCore {
         let to_frame = |t: f64| ((t / speed as f64) * rate as f64).round() as u64;
         let (start, end) = (to_frame(song_start), to_frame(phrase.end + 0.5));
         let cap = SongCapture { song: id.to_string(), phrase: phrase.id.clone(), speed, song_start };
-        let after: Option<Box<dyn FnOnce(&mut uta_audio::AudioEngine) -> Result<()>>> = backing.map(|file| {
+        let after: Option<crate::analyzer::EngineHook> = backing.map(|file| {
             Box::new(move |eng: &mut uta_audio::AudioEngine| {
                 eng.preview_range(file, start, Some(end), false, 1.0)?;
                 Ok(())
-            }) as Box<dyn FnOnce(&mut uta_audio::AudioEngine) -> Result<()>>
+            }) as crate::analyzer::EngineHook
         });
         self.begin_capture_with(CaptureKind::Song(Box::new(cap)), None, after)?;
         Ok(SongPlayback { start_frame: start, end_frame: end, speed, rate })
@@ -672,8 +684,11 @@ impl AppCore {
             Some(_) => return Err(CoreError::Invalid("the active recording is not a Song Lab attempt".into())),
             None => return Err(CoreError::Invalid("not recording".into())),
         }
+        let backing_offset = self.with_engine(|e| Ok(e.shared().preview_start_record_frame.load(std::sync::atomic::Ordering::Relaxed))).unwrap_or(u64::MAX);
         let _ = self.stop_preview();
         let (cap, mono, sr) = self.end_capture()?;
+        // seconds of recording before the backing actually started
+        let offset_s = if backing_offset == u64::MAX { 0.0 } else { backing_offset as f64 / sr.max(1) as f64 };
         let CaptureKind::Song(sc) = &cap.kind else {
             return Err(CoreError::Invalid("the active recording is not a Song Lab attempt".into()));
         };
@@ -689,8 +704,8 @@ impl AppCore {
             .frames
             .iter()
             .map(|f| {
-                let mut g = f.clone();
-                g.time = (sc.song_start + (f.time as f64 - cap.latency_s as f64).max(0.0) * sc.speed as f64) as f32;
+                let mut g = *f;
+                g.time = (sc.song_start + (f.time as f64 - cap.latency_s as f64 - offset_s).max(0.0) * sc.speed as f64) as f32;
                 g
             })
             .collect();
@@ -698,8 +713,14 @@ impl AppCore {
         if let (Some(p), Some(_)) = (&phrase, &d.reference) {
             match self.reference_contour(&sc.song, &d, p) {
                 Ok(reference) => {
-                    let take: Vec<PitchFrame> = contour.iter().filter(|f| (f.time as f64) >= p.start - 0.3 && (f.time as f64) <= p.end + 0.3).cloned().collect();
-                    comparison = compare_contours(&take, &reference, 1.5);
+                    let take: Vec<PitchFrame> = contour.iter().filter(|f| (f.time as f64) >= p.start - 0.3 && (f.time as f64) <= p.end + 0.3).copied().collect();
+                    let voiced = |fr: &[PitchFrame]| fr.iter().filter(|f| f.hz.is_some()).count();
+                    // comparing silence (or a few stray frames) would produce meaningless numbers
+                    comparison = if voiced(&take) * 4 >= voiced(&reference).max(8) {
+                        compare_contours(&take, &reference, 1.5).filter(|c| c.voiced_overlap >= 0.2)
+                    } else {
+                        None
+                    };
                     if comparison.is_none() {
                         notes.push("Not enough singing in the phrase to compare with the reference.".into());
                     }

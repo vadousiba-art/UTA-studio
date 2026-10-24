@@ -54,7 +54,7 @@ fn is_small_vowel(c: char) -> bool {
 
 /// Syllable formed by `c` followed by a small kana, if it combines.
 fn digraph(c: char, small: char) -> Option<String> {
-    let v = &base(small)?[..];
+    let v = base(small)?;
     if is_small_y(small) {
         let y = &v[1..]; // a / u / o
         return Some(match c {

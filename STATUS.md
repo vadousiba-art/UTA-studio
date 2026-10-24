@@ -4,7 +4,7 @@ _Last updated: 2026-10-24_
 
 ## Current milestone
 
-**M6 — Song Lab** (Coach part of M6 is done). M0–M5 are implemented.
+**M7 — polish, Windows CI, packaging.** M0–M6 are implemented.
 
 ## Completed
 
@@ -19,13 +19,16 @@ _Last updated: 2026-10-24_
 * M5 VST3 hosting: isolated helper, scanning, real-time bridge with delay
   compensation, generic parameters, state in projects, crash isolation and
   reload, offline export, Plugin Manager UI.
-* Coach: curriculum, exercises, evaluation, adaptation, review, health
-  rules, Coach UI.
+* M6: Coach (curriculum, exercises, evaluation, adaptation, review,
+  health rules, Coach UI) and Song Lab (songs, backing/reference WAV
+  import, LRC/text lyrics with readings, romaji and mora counts, tap
+  timing, phrases, pitch-preserving slow-down renders, seamless phrase
+  loops, attempts recorded with backing and compared with the reference,
+  notes, deletion).
 
 ## In progress
 
-* Song Lab backend and UI (the Song Lab screen currently shows an
-  "under construction" notice; no fake controls).
+* M7 tasks (see Next steps).
 
 ## Blocked / not verifiable here
 
@@ -44,23 +47,20 @@ _Last updated: 2026-10-24_
 
 | Check | Result |
 | --- | --- |
-| `cargo test --workspace` | 148 passed, 0 failed |
+| `cargo test --workspace` | 159 passed, 0 failed |
 | `cargo clippy --workspace --all-targets` | no warnings |
 | `npm test` | 2 passed |
 | `npm run typecheck` | clean |
 | `npm run sidecar` | helper built (release) |
-| `tauri dev` (Xvfb) | app ran; Plugin Manager scan, plugin insert, parameter drag, crash + reload verified by screenshots |
+| `tauri dev` (Xvfb) | app ran; Plugin Manager scan, plugin insert, parameter drag, crash + reload; Song Lab create, WAV/LRC import through the file dialog, phrase, 75 % render, loop playback, attempts with result view — verified by screenshots |
 
 ## Next steps (in order)
 
-1. Song Lab backend in `uta-core` (`songlab.rs`): song CRUD in the
-   library `songs` table; backing/reference import into
-   `data/songs/<id>/`; lyrics parsing (plain text, LRC) with kana→romaji;
-   speed renders via `uta_dsp::stretch` as jobs (cached); phrase loop
-   playback; attempt recording + analysis + DTW comparison vs. reference;
-   notes. Headless tests.
-2. Song Lab UI replacing `src/workspaces/SongLab.tsx`.
+1. `.github/workflows/windows.yml`: cargo test, clippy, npm test/typecheck,
+   `tauri build` (NSIS + MSI) with the plugin helper sidecar, upload
+   installers as artifacts.
+2. Re-check the packaged build (blank window seen once under Xvfb).
 3. Re-verify the Coach lesson flow in the running app.
-4. M7: `.github/workflows/windows.yml` (cargo test, npm test, tauri build
-   NSIS/MSI, upload artifacts); re-check packaged build; measure CPU/RAM;
-   accessibility pass; docs sync.
+4. Measure CPU/RAM (idle, playback with effects, plugin, analysis) and
+   document.
+5. Accessibility pass (focus order, labels, contrast); docs sync.

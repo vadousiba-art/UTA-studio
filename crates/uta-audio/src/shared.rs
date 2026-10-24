@@ -133,6 +133,10 @@ pub struct SharedState {
     /// Preview playback position (frames into the preview file).
     pub preview_position: AtomicU64,
     pub preview_playing: AtomicBool,
+    /// Recorded frames captured before the current preview started (for
+    /// aligning a take with the backing), `u64::MAX` when the preview was
+    /// started while not recording.
+    pub preview_start_record_frame: AtomicU64,
     /// Set by the device error callback.
     pub device_lost: AtomicBool,
     /// Device xruns reported by the backend.
@@ -169,6 +173,7 @@ impl SharedState {
             stream_generation: AtomicU64::new(0),
             preview_position: AtomicU64::new(0),
             preview_playing: AtomicBool::new(false),
+            preview_start_record_frame: AtomicU64::new(u64::MAX),
             device_lost: AtomicBool::new(false),
             device_xruns: AtomicU64::new(0),
             input_latency_us: AtomicU64::new(0),

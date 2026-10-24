@@ -116,6 +116,25 @@ export const api = {
     call<T.PresetEntry>("save_preset", { effectKind, name, params }),
   deletePreset: (id: string) => call<void>("delete_preset", { id }),
 
+  // song lab
+  songs: () => call<T.SongSummary[]>("songs"),
+  songCreate: (title: string, artist: string) => call<T.SongView>("song_create", { title, artist }),
+  songGet: (id: string) => call<T.SongView>("song_get", { id }),
+  songUpdate: (id: string, update: T.SongUpdate) => call<T.SongView>("song_update", { id, update }),
+  songImportLyrics: (id: string, text: string) => call<T.SongView>("song_import_lyrics", { id, text }),
+  songImportLyricsFile: (id: string, path: string) => call<T.SongView>("song_import_lyrics_file", { id, path }),
+  songDelete: (id: string) => call<void>("song_delete", { id }),
+  songImportAudio: (id: string, track: T.SongTrack, path: string) => call<number>("song_import_audio", { id, track, path }),
+  songRemoveAudio: (id: string, track: T.SongTrack) => call<T.SongView>("song_remove_audio", { id, track }),
+  songPrepare: (id: string, speed: number) => call<number>("song_prepare", { id, speed }),
+  songPlay: (id: string, track: T.SongTrack, from: number, to: number | null, looped: boolean, speed: number) =>
+    call<T.SongPlayback>("song_play", { id, track, from, to, looped, speed }),
+  songStop: () => call<void>("song_stop"),
+  songAttemptStart: (id: string, phrase: string, speed: number, withBacking: boolean) =>
+    call<T.SongPlayback>("song_attempt_start", { id, phrase, speed, withBacking }),
+  songAttemptStop: () => call<T.SongAttemptResult>("song_attempt_stop"),
+  songReferenceContour: (id: string, phrase: string) => call<T.PitchFrame[]>("song_reference_contour", { id, phrase }),
+
   // plugins
   pluginCatalog: () => call<T.PluginCatalog>("plugin_catalog"),
   pluginScan: (force: boolean) => call<number>("plugin_scan", { force }),

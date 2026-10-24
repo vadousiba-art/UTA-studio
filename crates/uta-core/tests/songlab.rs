@@ -24,15 +24,20 @@ fn singer(hz: f32) -> uta_audio::engine::InputGenerator {
 }
 
 fn app(dir: &std::path::Path) -> Arc<AppCore> {
+    app_with(dir, 220.0)
+}
+
+/// `hz` 0 = a silent microphone.
+fn app_with(dir: &std::path::Path, hz: f32) -> Arc<AppCore> {
     let paths = AppPaths::from_root(&dir.join("data"), &dir.join("projects"));
     let core = Arc::new(
         AppCore::with_backend(
             paths,
-            Box::new(|s: &Settings| {
+            Box::new(move |s: &Settings| {
                 let mut o = NullOptions::new(SR);
                 if s.microphone_enabled {
                     o.input_channels = 1;
-                    o.input = Some(singer(220.0));
+                    o.input = Some(if hz > 0.0 { singer(hz) } else { Box::new(|b: &mut [f32], _ch: usize| b.fill(0.0)) });
                 }
                 BackendChoice::Null(o)
             }),
@@ -161,4 +166,21 @@ fn song_lab_import_lyrics_slow_loop_attempt_compare_delete() {
     assert!(!d.path().join("data").join("songs").join(&id).exists());
     assert!(core.song_get(&id).is_err());
     assert!(core.song_get("../../etc").is_err());
+}
+
+#[test]
+fn silent_attempt_is_not_compared() {
+    let d = tempfile::tempdir().unwrap();
+    let core = app_with(d.path(), 0.0);
+    let id = core.song_create("Quiet", "").unwrap().id;
+    let reference = d.path().join("ref.wav");
+    tone(&reference, SR, 3.0, 220.0, 1);
+    done(&core, core.song_import_audio(&id, SongTrack::Reference, reference).unwrap());
+    let phrase = SongPhrase { id: "p".into(), name: "P".into(), start: 0.2, end: 1.2, line_ids: vec![], notes: String::new() };
+    core.song_update(&id, SongUpdate { phrases: Some(vec![phrase]), ..Default::default() }).unwrap();
+    core.song_attempt_start(&id, "p", 1.0, false).unwrap();
+    std::thread::sleep(Duration::from_millis(1500));
+    let res = core.song_attempt_stop().unwrap();
+    assert!(res.comparison.is_none(), "silence must not be scored against the reference");
+    assert!(res.notes.iter().any(|n| n.contains("Not enough singing")), "{:?}", res.notes);
 }

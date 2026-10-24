@@ -395,6 +395,8 @@ impl EngineCore {
                         self.dispose(Garbage::Stream(p.consumer));
                     }
                     self.preview = Some(Preview { consumer, frames, pos: start, gain, loop_start });
+                    let at = if self.capturing { self.shared.record_frames.load(Ordering::Relaxed) } else { u64::MAX };
+                    self.shared.preview_start_record_frame.store(at, Ordering::Relaxed);
                     self.shared.preview_playing.store(true, Ordering::Relaxed);
                 }
                 Command::StopPreview => {
@@ -418,6 +420,7 @@ impl EngineCore {
         self.capturing = true;
         self.shared.record_start.store(self.position, Ordering::Relaxed);
         self.shared.record_frames.store(0, Ordering::Relaxed);
+        self.shared.preview_start_record_frame.store(u64::MAX, Ordering::Relaxed);
         self.shared.record_dropped.store(0, Ordering::Relaxed);
         self.shared.recording.store(true, Ordering::Release);
     }
